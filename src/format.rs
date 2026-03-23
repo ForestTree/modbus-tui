@@ -8,7 +8,7 @@ pub struct WordSwap {
 }
 
 /// Numeric interpretation format for register values.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum NumFormat {
     Int16,
     Uint16,
@@ -25,6 +25,24 @@ pub enum NumFormat {
 impl Default for NumFormat {
     fn default() -> Self {
         Self::Int16
+    }
+}
+
+impl std::str::FromStr for NumFormat {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "u16" => Ok(Self::Uint16),
+            "i16" => Ok(Self::Int16),
+            "u32" => Ok(Self::Uint32),
+            "i32" => Ok(Self::Int32),
+            "u64" => Ok(Self::Uint64),
+            "i64" => Ok(Self::Int64),
+            "f32" => Ok(Self::Float32),
+            "f64" => Ok(Self::Float64),
+            "b16" => Ok(Self::Bin16),
+            _ => Err(format!("unknown format '{}'; expected one of: u16, i16, u32, i32, u64, i64, f32, f64, b16", s)),
+        }
     }
 }
 

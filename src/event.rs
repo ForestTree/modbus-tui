@@ -315,14 +315,6 @@ fn execute_command(state: &mut AppState, cmd: &str) {
     }
 
     match parts[0] {
-        "connect" | "reconnect" => {
-            state.connection = crate::app::ConnectionStatus::Disconnected;
-            state.log.info("manual reconnect requested");
-        }
-        "disconnect" => {
-            state.connection = crate::app::ConnectionStatus::Disconnected;
-            state.log.info("manual disconnect requested");
-        }
         "poll" => {
             if parts.len() < 2 {
                 state.log.error("usage: poll <interval_ms>");

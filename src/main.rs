@@ -28,8 +28,31 @@ const TICK: Duration = Duration::from_millis(100);
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+    let decimal_addresses = cli.decimal_addresses;
     let config = AppConfig::from_cli(&cli)?;
     let (state, shutdown, write_tx, write_rx) = new_shared_state(config);
+
+    // Apply CLI startup overrides to pane states
+    {
+        let mut s = state.lock().await;
+        // -D flag: set all panes to decimal address format
+        if decimal_addresses {
+            for p in &mut s.ui.panes {
+                p.addr_format = app::AddrFormat::Decimal;
+            }
+        }
+        // Apply per-range initial numeric format from START:COUNT;FMT
+        let formats: Vec<_> = s.config.ranges.iter()
+            .map(|r| r.initial_format)
+            .collect();
+        for (i, fmt) in formats.into_iter().enumerate() {
+            if let Some(nf) = fmt {
+                if let Some(p) = s.ui.panes.get_mut(i) {
+                    p.num_format = nf;
+                }
+            }
+        }
+    }
 
     // Log startup
     {

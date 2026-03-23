@@ -139,11 +139,12 @@ fn draw_content(frame: &mut Frame, state: &AppState, area: Rect) {
 }
 
 /// Draw all register panes in a grid layout.
-/// 1-4 ranges: 1 row, N columns.
-/// 5-8 ranges: 2 rows, 4 columns each.
+/// 1-2 ranges: 1 row, N columns.
+/// 3-4 ranges: 2 rows, 1-2 columns each...
 fn draw_register_grid(frame: &mut Frame, state: &AppState, area: Rect) {
     let n = state.config.ranges.len();
-    let (rows, cols) = if n <= 4 { (1, n) } else { (2, 4) };
+    let cols = if n <= 1 { 1 } else { 2 };
+    let rows = (n + cols - 1) / cols; // ceil division
 
     // Split vertically into rows
     let row_constraints: Vec<Constraint> = (0..rows).map(|_| Constraint::Ratio(1, rows as u32)).collect();
@@ -153,7 +154,7 @@ fn draw_register_grid(frame: &mut Frame, state: &AppState, area: Rect) {
         .split(area);
 
     for row in 0..rows {
-        let start_idx = row * 4;
+        let start_idx = row * cols;
         let end_idx = (start_idx + cols).min(n);
         let panes_in_row = end_idx - start_idx;
 
@@ -677,8 +678,6 @@ fn draw_help_dialog(frame: &mut Frame) {
         help("Ctrl+C", "Quit"),
         Line::from(""),
         Line::from(Span::styled("  Commands (via :)", section_style)),
-        help(":connect", "Reconnect to server"),
-        help(":disconnect", "Disconnect"),
         help(":poll <ms>", "Change poll interval"),
         help(":export [path]", "Export registers to JSON"),
         Line::from(""),

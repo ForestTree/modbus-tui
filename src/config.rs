@@ -37,12 +37,12 @@ pub struct Cli {
     #[arg(long, alias = "di", value_name = "START:COUNT", action = clap::ArgAction::Append)]
     pub discrete_inputs: Vec<String>,
 
-    /// Holding register range: START:COUNT [alias: --hr] (repeatable)
-    #[arg(long, alias = "hr", value_name = "START:COUNT", action = clap::ArgAction::Append)]
+    /// Holding register range: START:COUNT[:FMT] where FMT = u16|i16|u32|i32|u64|i64|f32|f64|b16 [alias: --hr] (repeatable)
+    #[arg(long, alias = "hr", value_name = "START:COUNT[:FMT]", action = clap::ArgAction::Append)]
     pub holding_registers: Vec<String>,
 
-    /// Input register range: START:COUNT [alias: --ir] (repeatable)
-    #[arg(long, alias = "ir", value_name = "START:COUNT", action = clap::ArgAction::Append)]
+    /// Input register range: START:COUNT[:FMT] where FMT = u16|i16|u32|i32|u64|i64|f32|f64|b16 [alias: --ir] (repeatable)
+    #[arg(long, alias = "ir", value_name = "START:COUNT[:FMT]", action = clap::ArgAction::Append)]
     pub input_registers: Vec<String>,
 
     /// Start reference: 0 = zero-based (0 to user, 0 to protocol), 1 = one-based addressing (1 to user, 0 to protocol)
@@ -60,6 +60,10 @@ pub struct Cli {
     /// Poll interval in milliseconds (10..60000)
     #[arg(short = 'p', long, default_value_t = 100)]
     pub poll_interval: u64,
+
+    /// Show MODBUS addresses in decimal (instead of hex) for all panes
+    #[arg(short = 'D', long)]
+    pub decimal_addresses: bool,
 
     /// Path to a JSON config file (overrides other flags)
     #[arg(short = 'c', long, value_name = "FILE")]
@@ -121,6 +125,9 @@ pub struct PollRange {
     pub reg_type: RegisterType,
     pub start: u16,
     pub count: u16,
+    /// Optional initial numeric format for the pane (word registers only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial_format: Option<crate::format::NumFormat>,
 }
 
 impl PollRange {
@@ -175,27 +182,52 @@ impl AppConfig {
             Self::load(path)?
         } else {
             let sr = cli.start_reference;
-            let mut ranges = Vec::new();
 
-            for s in &cli.coils {
-                let (user_start, count) = parse_range(s, "coils")?;
-                let start = user_to_protocol(user_start, sr, "coils")?;
-                ranges.push(PollRange { reg_type: RegisterType::Coils, start, count });
-            }
-            for s in &cli.discrete_inputs {
-                let (user_start, count) = parse_range(s, "discrete-inputs")?;
-                let start = user_to_protocol(user_start, sr, "discrete-inputs")?;
-                ranges.push(PollRange { reg_type: RegisterType::DiscreteInputs, start, count });
-            }
-            for s in &cli.holding_registers {
-                let (user_start, count) = parse_range(s, "holding-registers")?;
-                let start = user_to_protocol(user_start, sr, "holding-registers")?;
-                ranges.push(PollRange { reg_type: RegisterType::HoldingRegisters, start, count });
-            }
-            for s in &cli.input_registers {
-                let (user_start, count) = parse_range(s, "input-registers")?;
-                let start = user_to_protocol(user_start, sr, "input-registers")?;
-                ranges.push(PollRange { reg_type: RegisterType::InputRegisters, start, count });
+            // Build ranges in the same order as they appear on the command line
+            // by scanning raw args for the register-type flags.
+            let mut ranges = Vec::new();
+            let mut co_idx = 0usize;
+            let mut di_idx = 0usize;
+            let mut hr_idx = 0usize;
+            let mut ir_idx = 0usize;
+
+            let raw_args: Vec<String> = std::env::args().collect();
+            for arg in &raw_args {
+                match arg.as_str() {
+                    "--coils" | "--co" => {
+                        if let Some(s) = cli.coils.get(co_idx) {
+                            let (user_start, count) = parse_range(s, "coils")?;
+                            let start = user_to_protocol(user_start, sr, "coils")?;
+                            ranges.push(PollRange { reg_type: RegisterType::Coils, start, count, initial_format: None });
+                            co_idx += 1;
+                        }
+                    }
+                    "--discrete-inputs" | "--di" => {
+                        if let Some(s) = cli.discrete_inputs.get(di_idx) {
+                            let (user_start, count) = parse_range(s, "discrete-inputs")?;
+                            let start = user_to_protocol(user_start, sr, "discrete-inputs")?;
+                            ranges.push(PollRange { reg_type: RegisterType::DiscreteInputs, start, count, initial_format: None });
+                            di_idx += 1;
+                        }
+                    }
+                    "--holding-registers" | "--hr" => {
+                        if let Some(s) = cli.holding_registers.get(hr_idx) {
+                            let (user_start, count, fmt) = parse_range_with_format(s, "holding-registers")?;
+                            let start = user_to_protocol(user_start, sr, "holding-registers")?;
+                            ranges.push(PollRange { reg_type: RegisterType::HoldingRegisters, start, count, initial_format: fmt });
+                            hr_idx += 1;
+                        }
+                    }
+                    "--input-registers" | "--ir" => {
+                        if let Some(s) = cli.input_registers.get(ir_idx) {
+                            let (user_start, count, fmt) = parse_range_with_format(s, "input-registers")?;
+                            let start = user_to_protocol(user_start, sr, "input-registers")?;
+                            ranges.push(PollRange { reg_type: RegisterType::InputRegisters, start, count, initial_format: fmt });
+                            ir_idx += 1;
+                        }
+                    }
+                    _ => {}
+                }
             }
 
             Self {
@@ -237,12 +269,6 @@ impl AppConfig {
                 self.poll_interval_ms
             );
         }
-        if self.ranges.len() > 8 {
-            bail!(
-                "maximum 8 register ranges supported, got {}",
-                self.ranges.len()
-            );
-        }
         for (i, r) in self.ranges.iter().enumerate() {
             let label = format!("range[{}] ({})", i, r.tab_label(self.start_reference, crate::app::AddrFormat::default()));
             if r.count == 0 {
@@ -273,6 +299,24 @@ fn parse_range(s: &str, name: &str) -> Result<(u16, u16)> {
         .parse()
         .with_context(|| format!("{name}: invalid count \"{}\"", parts[1]))?;
     Ok((start, count))
+}
+
+/// Parse "START:COUNT" or "START:COUNT:FMT" where FMT is a NumFormat code.
+fn parse_range_with_format(s: &str, name: &str) -> Result<(u16, u16, Option<crate::format::NumFormat>)> {
+    let parts: Vec<&str> = s.split(':').collect();
+    match parts.len() {
+        2 => {
+            let (start, count) = parse_range(s, name)?;
+            Ok((start, count, None))
+        }
+        3 => {
+            let range_str = format!("{}:{}", parts[0], parts[1]);
+            let (start, count) = parse_range(&range_str, name)?;
+            let nf: crate::format::NumFormat = parts[2].parse().map_err(|e: String| anyhow::anyhow!("{name}: {e}"))?;
+            Ok((start, count, Some(nf)))
+        }
+        _ => bail!("{name}: expected format START:COUNT[:FMT], got \"{s}\""),
+    }
 }
 
 /// Convert user-facing address to protocol address by subtracting start_reference.
