@@ -287,6 +287,11 @@ pub enum InputMode {
         input: String,
         error: Option<String>,
     },
+    LabelDialog {
+        addr: u16,
+        tab_index: usize,
+        input: String,
+    },
     CommandBar {
         input: String,
         error: Option<String>,

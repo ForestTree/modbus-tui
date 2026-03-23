@@ -38,6 +38,7 @@ pub fn draw(frame: &mut Frame, state: &AppState) {
     // Overlay dialogs
     match &state.ui.input_mode {
         InputMode::WriteDialog { .. } => draw_write_dialog(frame, state),
+        InputMode::LabelDialog { .. } => draw_label_dialog(frame, state),
         InputMode::HelpDialog => draw_help_dialog(frame),
         InputMode::FormatDialog { selected } => draw_format_dialog(frame, *selected),
         _ => {}
@@ -633,6 +634,53 @@ fn draw_write_dialog(frame: &mut Frame, state: &AppState) {
 }
 
 // ---------------------------------------------------------------------------
+// Label dialog overlay
+// ---------------------------------------------------------------------------
+
+fn draw_label_dialog(frame: &mut Frame, state: &AppState) {
+    let (addr, tab_index, input) = match &state.ui.input_mode {
+        InputMode::LabelDialog { addr, tab_index, input } => (*addr, *tab_index, input.as_str()),
+        _ => return,
+    };
+
+    let area = frame.area();
+    let width = 50u16.min(area.width.saturating_sub(4));
+    let height = 6u16.min(area.height.saturating_sub(2));
+    let x = (area.width.saturating_sub(width)) / 2;
+    let y = (area.height.saturating_sub(height)) / 2;
+    let dialog_area = Rect::new(x, y, width, height);
+
+    frame.render_widget(Clear, dialog_area);
+
+    let pane_fmt = state.ui.panes.get(tab_index).map(|p| p.addr_format).unwrap_or_default();
+    let display_addr = addr + state.config.start_reference;
+    let addr_str = match pane_fmt {
+        crate::app::AddrFormat::Hex => format!("0x{:04X}", display_addr),
+        crate::app::AddrFormat::Decimal => format!("{}", display_addr),
+    };
+    let title = format!(" Label @{addr_str} ");
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(Span::styled(title, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
+
+    let lines = vec![
+        Line::from(vec![
+            Span::styled("  Label: ", Style::default().fg(Color::DarkGray)),
+            Span::raw(input),
+            Span::styled("_", Style::default().add_modifier(Modifier::SLOW_BLINK)),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Enter=confirm  Esc=cancel  (empty to clear)",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+
+    frame.render_widget(Paragraph::new(lines).block(block), dialog_area);
+}
+
+// ---------------------------------------------------------------------------
 // Help dialog overlay
 // ---------------------------------------------------------------------------
 
@@ -669,6 +717,7 @@ fn draw_help_dialog(frame: &mut Frame) {
         Line::from(""),
         Line::from(Span::styled("  Actions", section_style)),
         help("w", "Write value to selected register"),
+        help("l", "Edit label for selected register"),
         help("f", "Choose numeric format for active pane"),
         help("d / D", "Decimal addresses (active / all panes)"),
         help("h / H", "Hex addresses (active / all panes)"),

@@ -11,6 +11,7 @@ pub fn handle_key(state: &mut AppState, key: KeyEvent) {
         InputMode::HelpDialog => handle_help_dialog(state, key),
         InputMode::FormatDialog { .. } => handle_format_dialog(state, key),
         InputMode::WriteDialog { .. } => handle_write_dialog(state, key),
+        InputMode::LabelDialog { .. } => handle_label_dialog(state, key),
         InputMode::CommandBar { .. } => handle_command_bar(state, key),
     }
 }
@@ -103,6 +104,23 @@ fn handle_normal(state: &mut AppState, key: KeyEvent) {
                     .unwrap_or_default();
                 let sel = NumFormat::ALL.iter().position(|f| *f == current).unwrap_or(0);
                 state.ui.input_mode = InputMode::FormatDialog { selected: sel };
+            }
+        }
+
+        // Label dialog — edit label for the selected register
+        KeyCode::Char('l') => {
+            if state.tab_count() > 0 {
+                if let Some(addr) = state.selected_addr() {
+                    let existing = state.registers.get(state.ui.active_tab)
+                        .and_then(|m| m.get(&addr))
+                        .and_then(|rv| rv.label.clone())
+                        .unwrap_or_default();
+                    state.ui.input_mode = InputMode::LabelDialog {
+                        addr,
+                        tab_index: state.ui.active_tab,
+                        input: existing,
+                    };
+                }
             }
         }
 
@@ -208,6 +226,40 @@ fn handle_format_dialog(state: &mut AppState, key: KeyEvent) {
                 p.selected_row = 0;
             }
             state.ui.input_mode = InputMode::Normal;
+        }
+        _ => {}
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Label dialog mode
+// ---------------------------------------------------------------------------
+
+fn handle_label_dialog(state: &mut AppState, key: KeyEvent) {
+    let (addr, tab_index, mut input) = match state.ui.input_mode.clone() {
+        InputMode::LabelDialog { addr, tab_index, input } => (addr, tab_index, input),
+        _ => return,
+    };
+
+    match key.code {
+        KeyCode::Esc => {
+            state.ui.input_mode = InputMode::Normal;
+        }
+        KeyCode::Enter => {
+            if let Some(map) = state.registers.get_mut(tab_index) {
+                if let Some(rv) = map.get_mut(&addr) {
+                    rv.label = if input.is_empty() { None } else { Some(input) };
+                }
+            }
+            state.ui.input_mode = InputMode::Normal;
+        }
+        KeyCode::Backspace => {
+            input.pop();
+            state.ui.input_mode = InputMode::LabelDialog { addr, tab_index, input };
+        }
+        KeyCode::Char(c) => {
+            input.push(c);
+            state.ui.input_mode = InputMode::LabelDialog { addr, tab_index, input };
         }
         _ => {}
     }
