@@ -6,7 +6,7 @@ use std::time::Instant;
 use chrono::Local;
 use tokio::sync::Mutex;
 
-use crate::config::{AppConfig, };
+use crate::config::AppConfig;
 use crate::format::NumFormat;
 
 // ---------------------------------------------------------------------------
@@ -304,23 +304,12 @@ pub enum AddrFormat {
     Decimal,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PaneState {
     pub scroll_offset: usize,
     pub selected_row: usize,
     pub addr_format: AddrFormat,
     pub num_format: NumFormat,
-}
-
-impl Default for PaneState {
-    fn default() -> Self {
-        Self {
-            scroll_offset: 0,
-            selected_row: 0,
-            addr_format: AddrFormat::default(),
-            num_format: NumFormat::default(),
-        }
-    }
 }
 
 #[derive(Debug)]
