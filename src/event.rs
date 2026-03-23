@@ -49,15 +49,15 @@ fn handle_normal(state: &mut AppState, key: KeyEvent) {
 
         // Write dialog (client mode, writable register types)
         KeyCode::Char('w') if state.config.mode == Mode::Client => {
-            if state.active_tab_is_writable() {
-                if let Some(addr) = state.selected_addr() {
-                    state.ui.input_mode = InputMode::WriteDialog {
-                        addr,
-                        tab_index: state.ui.active_tab,
-                        input: String::new(),
-                        error: None,
-                    };
-                }
+            if state.active_tab_is_writable()
+                && let Some(addr) = state.selected_addr()
+            {
+                state.ui.input_mode = InputMode::WriteDialog {
+                    addr,
+                    tab_index: state.ui.active_tab,
+                    input: String::new(),
+                    error: None,
+                };
             }
         }
 
@@ -115,20 +115,20 @@ fn handle_normal(state: &mut AppState, key: KeyEvent) {
 
         // Label dialog — edit label for the selected register
         KeyCode::Char('l') => {
-            if state.tab_count() > 0 {
-                if let Some(addr) = state.selected_addr() {
-                    let existing = state
-                        .registers
-                        .get(state.ui.active_tab)
-                        .and_then(|m| m.get(&addr))
-                        .and_then(|rv| rv.label.clone())
-                        .unwrap_or_default();
-                    state.ui.input_mode = InputMode::LabelDialog {
-                        addr,
-                        tab_index: state.ui.active_tab,
-                        input: existing,
-                    };
-                }
+            if state.tab_count() > 0
+                && let Some(addr) = state.selected_addr()
+            {
+                let existing = state
+                    .registers
+                    .get(state.ui.active_tab)
+                    .and_then(|m| m.get(&addr))
+                    .and_then(|rv| rv.label.clone())
+                    .unwrap_or_default();
+                state.ui.input_mode = InputMode::LabelDialog {
+                    addr,
+                    tab_index: state.ui.active_tab,
+                    input: existing,
+                };
             }
         }
 
@@ -258,10 +258,10 @@ fn handle_label_dialog(state: &mut AppState, key: KeyEvent) {
             state.ui.input_mode = InputMode::Normal;
         }
         KeyCode::Enter => {
-            if let Some(map) = state.registers.get_mut(tab_index) {
-                if let Some(rv) = map.get_mut(&addr) {
-                    rv.label = if input.is_empty() { None } else { Some(input) };
-                }
+            if let Some(map) = state.registers.get_mut(tab_index)
+                && let Some(rv) = map.get_mut(&addr)
+            {
+                rv.label = if input.is_empty() { None } else { Some(input) };
             }
             state.ui.input_mode = InputMode::Normal;
         }

@@ -91,15 +91,6 @@ pub enum RegisterType {
 }
 
 impl RegisterType {
-    pub fn short_name(self) -> &'static str {
-        match self {
-            Self::Coils => "CO",
-            Self::DiscreteInputs => "DI",
-            Self::HoldingRegisters => "HR",
-            Self::InputRegisters => "IR",
-        }
-    }
-
     pub fn is_coil_type(self) -> bool {
         matches!(self, Self::Coils | Self::DiscreteInputs)
     }

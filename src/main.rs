@@ -44,10 +44,10 @@ async fn main() -> Result<()> {
         // Apply per-range initial numeric format from START:COUNT;FMT
         let formats: Vec<_> = s.config.ranges.iter().map(|r| r.initial_format).collect();
         for (i, fmt) in formats.into_iter().enumerate() {
-            if let Some(nf) = fmt {
-                if let Some(p) = s.ui.panes.get_mut(i) {
-                    p.num_format = nf;
-                }
+            if let Some(nf) = fmt
+                && let Some(p) = s.ui.panes.get_mut(i)
+            {
+                p.num_format = nf;
             }
         }
     }

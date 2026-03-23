@@ -6,7 +6,7 @@ use std::time::Instant;
 use chrono::Local;
 use tokio::sync::Mutex;
 
-use crate::config::{AppConfig, RegisterType};
+use crate::config::{AppConfig, };
 use crate::format::NumFormat;
 
 // ---------------------------------------------------------------------------
@@ -110,14 +110,6 @@ impl AppState {
             .get(self.ui.active_tab)
             .map(|r| r.reg_type.is_writable())
             .unwrap_or(false)
-    }
-
-    /// RegisterType for the currently active tab.
-    pub fn active_tab_type(&self) -> Option<RegisterType> {
-        self.config
-            .ranges
-            .get(self.ui.active_tab)
-            .map(|r| r.reg_type)
     }
 
     /// Get the protocol address of the currently selected row in the active pane,
@@ -233,7 +225,6 @@ impl fmt::Display for LogLevel {
 pub struct LogEntry {
     pub level: LogLevel,
     pub message: String,
-    pub timestamp: Instant,
     pub wall_clock: String,
 }
 
@@ -256,7 +247,6 @@ impl LogBuffer {
         self.entries.push_back(LogEntry {
             level,
             message: message.into(),
-            timestamp: Instant::now(),
             wall_clock: Local::now().format("%H:%M:%S%.3f").to_string(),
         });
     }

@@ -90,13 +90,12 @@ async fn run(state: SharedState, mut write_rx: WriteRx) {
             // Drain pending write requests
             while let Ok(req) = write_rx.try_recv() {
                 let reg_type = ranges.get(req.tab_index).map(|r| r.reg_type);
-                if let Some(rt) = reg_type {
-                    if let Err(msg) =
+                if let Some(rt) = reg_type
+                    && let Err(msg) =
                         execute_write(&mut ctx, rt, req.addr, &req.values, &state).await
-                    {
-                        let mut s = state.lock().await;
-                        s.log.error(format!("write failed: {msg}"));
-                    }
+                {
+                    let mut s = state.lock().await;
+                    s.log.error(format!("write failed: {msg}"));
                 }
             }
 
