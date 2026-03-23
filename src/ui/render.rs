@@ -2,16 +2,14 @@ use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{
-    Block, Borders, Cell, Clear, List, ListItem, Paragraph, Row, Table,
-};
+use ratatui::widgets::{Block, Borders, Cell, Clear, List, ListItem, Paragraph, Row, Table};
 
 use crate::app::{
-    AppState, ConnectionStatus, FocusPane, InputMode, LogLevel, RegisterValue,
-    ServerStats, CHANGE_HIGHLIGHT_SECS,
+    AppState, CHANGE_HIGHLIGHT_SECS, ConnectionStatus, FocusPane, InputMode, LogLevel,
+    RegisterValue, ServerStats,
 };
-use crate::format::NumFormat;
 use crate::config::Mode;
+use crate::format::NumFormat;
 
 pub fn draw(frame: &mut Frame, state: &AppState) {
     let has_bottom_bar = !matches!(state.ui.input_mode, InputMode::Normal);
@@ -67,7 +65,10 @@ fn draw_status_bar(frame: &mut Frame, state: &AppState, area: Rect) {
             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         )
     } else {
-        Span::styled(conn_text, Style::default().fg(conn_color).add_modifier(Modifier::BOLD))
+        Span::styled(
+            conn_text,
+            Style::default().fg(conn_color).add_modifier(Modifier::BOLD),
+        )
     };
 
     let poll_span = Span::styled(
@@ -80,7 +81,10 @@ fn draw_status_bar(frame: &mut Frame, state: &AppState, area: Rect) {
     let mut status_line = Line::from(vec![
         Span::styled(
             format!(" {mode_str} "),
-            Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" "),
         Span::styled(target_str, Style::default().fg(Color::White)),
@@ -92,7 +96,11 @@ fn draw_status_bar(frame: &mut Frame, state: &AppState, area: Rect) {
         poll_span,
         sep.clone(),
         Span::styled(
-            if state.config.start_reference == 0 { "0-based addressing" } else { "1-based addressing" },
+            if state.config.start_reference == 0 {
+                "0-based addressing"
+            } else {
+                "1-based addressing"
+            },
             Style::default().fg(Color::DarkGray),
         ),
     ]);
@@ -106,12 +114,16 @@ fn draw_status_bar(frame: &mut Frame, state: &AppState, area: Rect) {
     };
     if let Some(label) = swap_label {
         status_line.spans.push(sep);
-        status_line.spans.push(Span::styled(label, Style::default().fg(Color::DarkGray)));
+        status_line
+            .spans
+            .push(Span::styled(label, Style::default().fg(Color::DarkGray)));
     }
 
     let block = Block::default().borders(Borders::ALL).title(Span::styled(
         " modbus-tui ",
-        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
     ));
 
     frame.render_widget(Paragraph::new(status_line).block(block), area);
@@ -126,7 +138,9 @@ fn draw_content(frame: &mut Frame, state: &AppState, area: Rect) {
         Mode::Server => draw_server_content(frame, state, area),
         Mode::Client => {
             if state.config.ranges.is_empty() {
-                let block = Block::default().borders(Borders::ALL).title(" No register ranges configured ");
+                let block = Block::default()
+                    .borders(Borders::ALL)
+                    .title(" No register ranges configured ");
                 let msg = Paragraph::new("  Use --hr, --ir, --co, --di to add register ranges.")
                     .style(Style::default().fg(Color::DarkGray))
                     .block(block);
@@ -145,10 +159,12 @@ fn draw_content(frame: &mut Frame, state: &AppState, area: Rect) {
 fn draw_register_grid(frame: &mut Frame, state: &AppState, area: Rect) {
     let n = state.config.ranges.len();
     let cols = if n <= 1 { 1 } else { 2 };
-    let rows = (n + cols - 1) / cols; // ceil division
+    let rows = n.div_ceil(cols); // ceil division
 
     // Split vertically into rows
-    let row_constraints: Vec<Constraint> = (0..rows).map(|_| Constraint::Ratio(1, rows as u32)).collect();
+    let row_constraints: Vec<Constraint> = (0..rows)
+        .map(|_| Constraint::Ratio(1, rows as u32))
+        .collect();
     let row_areas = Layout::default()
         .direction(Direction::Vertical)
         .constraints(row_constraints)
@@ -173,8 +189,8 @@ fn draw_register_grid(frame: &mut Frame, state: &AppState, area: Rect) {
 
         for col in 0..panes_in_row {
             let pane_idx = start_idx + col;
-            let is_active = pane_idx == state.ui.active_tab
-                && state.ui.focus == FocusPane::Registers;
+            let is_active =
+                pane_idx == state.ui.active_tab && state.ui.focus == FocusPane::Registers;
             draw_register_pane(frame, state, pane_idx, is_active, col_areas[col]);
         }
     }
@@ -199,19 +215,30 @@ fn draw_server_connections(frame: &mut Frame, state: &AppState, area: Rect) {
     let lines = vec![
         Line::from(""),
         Line::from(vec![
-            Span::styled("  Active connections: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                "  Active connections: ",
+                Style::default().fg(Color::DarkGray),
+            ),
             Span::styled(
                 format!("{}", stats.active_connections),
                 if stats.active_connections > 0 {
-                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::White)
                 },
             ),
         ]),
         Line::from(vec![
-            Span::styled("  Total connections:  ", Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("{}", stats.total_connections), Style::default().fg(Color::White)),
+            Span::styled(
+                "  Total connections:  ",
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::styled(
+                format!("{}", stats.total_connections),
+                Style::default().fg(Color::White),
+            ),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -223,7 +250,10 @@ fn draw_server_connections(frame: &mut Frame, state: &AppState, area: Rect) {
         ]),
         Line::from(vec![
             Span::styled("  Unit ID:      ", Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("{}", state.config.unit), Style::default().fg(Color::White)),
+            Span::styled(
+                format!("{}", state.config.unit),
+                Style::default().fg(Color::White),
+            ),
         ]),
     ];
     let block = Block::default()
@@ -250,21 +280,43 @@ fn draw_server_requests(frame: &mut Frame, stats: &ServerStats, area: Rect) {
     ];
 
     let header = Row::new(vec![
-        Cell::from("Request Type").style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Cell::from("Count").style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-    ]).height(1);
+        Cell::from("Request Type").style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Count").style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ])
+    .height(1);
 
-    let table_rows: Vec<Row> = rows_data.into_iter().map(|(name, count)| {
-        let s = if count > 0 { Style::default().fg(Color::Green) } else { Style::default().fg(Color::DarkGray) };
-        Row::new(vec![Cell::from(name), Cell::from(format!("{count}")).style(s)])
-    }).collect();
+    let table_rows: Vec<Row> = rows_data
+        .into_iter()
+        .map(|(name, count)| {
+            let s = if count > 0 {
+                Style::default().fg(Color::Green)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+            Row::new(vec![
+                Cell::from(name),
+                Cell::from(format!("{count}")).style(s),
+            ])
+        })
+        .collect();
 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::DarkGray))
         .title(format!(" Requests ({total}) "));
     let widths = vec![Constraint::Min(26), Constraint::Length(12)];
-    let table = Table::new(table_rows, &widths).header(header).block(block).column_spacing(2);
+    let table = Table::new(table_rows, &widths)
+        .header(header)
+        .block(block)
+        .column_spacing(2);
     frame.render_widget(table, area);
 }
 
@@ -274,7 +326,11 @@ fn draw_server_requests(frame: &mut Frame, stats: &ServerStats, area: Rect) {
 
 /// Draw a single register pane at the given index.
 fn draw_register_pane(
-    frame: &mut Frame, state: &AppState, pane_idx: usize, is_active: bool, area: Rect,
+    frame: &mut Frame,
+    state: &AppState,
+    pane_idx: usize,
+    is_active: bool,
+    area: Rect,
 ) {
     let range = &state.config.ranges[pane_idx];
     let regs = &state.registers[pane_idx];
@@ -290,7 +346,10 @@ fn draw_register_pane(
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(border_style)
-        .title(format!(" {} ", range.tab_label(state.config.start_reference, pane_state.addr_format)));
+        .title(format!(
+            " {} ",
+            range.tab_label(state.config.start_reference, pane_state.addr_format)
+        ));
 
     if regs.is_empty() {
         let msg = Paragraph::new("  Waiting…")
@@ -307,21 +366,35 @@ fn draw_register_pane(
     let (header, rows, widths, display_row_count) = if is_coils {
         // Simplified layout for coils / discrete inputs: Addr, Value, Timestamp, Label
         let hdr = Row::new(
-            ["Addr", "Value", "Timestamp", "Label"].into_iter()
-                .map(|h| Cell::from(h).style(Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan))),
-        ).height(1);
+            ["Addr", "Value", "Timestamp", "Label"]
+                .into_iter()
+                .map(|h| {
+                    Cell::from(h).style(
+                        Style::default()
+                            .add_modifier(Modifier::BOLD)
+                            .fg(Color::Cyan),
+                    )
+                }),
+        )
+        .height(1);
 
         let row_count = regs.len();
         let max_sel = row_count.saturating_sub(1);
         let selected = pane_state.selected_row.min(max_sel);
 
-        let rs: Vec<Row> = regs.iter().enumerate().map(|(i, (addr, rv))| {
-            build_coil_row(*addr + sr, rv, i == selected && is_active, addr_fmt)
-        }).collect();
+        let rs: Vec<Row> = regs
+            .iter()
+            .enumerate()
+            .map(|(i, (addr, rv))| {
+                build_coil_row(*addr + sr, rv, i == selected && is_active, addr_fmt)
+            })
+            .collect();
 
         let w = vec![
-            Constraint::Length(8), Constraint::Length(5),
-            Constraint::Length(23), Constraint::Min(5),
+            Constraint::Length(8),
+            Constraint::Length(5),
+            Constraint::Length(23),
+            Constraint::Min(5),
         ];
         (hdr, rs, w, row_count)
     } else {
@@ -329,9 +402,17 @@ fn draw_register_pane(
         let width = nf.width();
         let value_header = nf.column_header();
         let hdr = Row::new(
-            ["Addr", "Hex", value_header, "Timestamp", "Label"].into_iter()
-                .map(|h| Cell::from(h).style(Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan))),
-        ).height(1);
+            ["Addr", "Hex", value_header, "Timestamp", "Label"]
+                .into_iter()
+                .map(|h| {
+                    Cell::from(h).style(
+                        Style::default()
+                            .add_modifier(Modifier::BOLD)
+                            .fg(Color::Cyan),
+                    )
+                }),
+        )
+        .height(1);
 
         // Collect addresses in order, then step by `width`
         let addrs: Vec<u16> = regs.keys().copied().collect();
@@ -339,9 +420,10 @@ fn draw_register_pane(
             .chunks(width)
             .map(|chunk| {
                 let base = chunk[0];
-                let vals: Vec<u16> = chunk.iter().map(|a| {
-                    regs.get(a).map(|rv| rv.raw).unwrap_or(0)
-                }).collect();
+                let vals: Vec<u16> = chunk
+                    .iter()
+                    .map(|a| regs.get(a).map(|rv| rv.raw).unwrap_or(0))
+                    .collect();
                 (base, vals)
             })
             .collect();
@@ -350,19 +432,31 @@ fn draw_register_pane(
         let max_sel = display_count.saturating_sub(1);
         let selected = pane_state.selected_row.min(max_sel);
 
-        let rs: Vec<Row> = grouped.iter().enumerate().map(|(i, (base_addr, vals))| {
-            let rv = regs.get(base_addr).unwrap();
-            let hex_str = vals.iter()
-                .map(|v| format!("{:04X}", v))
-                .collect::<Vec<_>>()
-                .join(" ");
-            let ws = crate::format::WordSwap {
-                ints: state.config.swap_ints,
-                floats: state.config.swap_floats,
-            };
-            let value_str = nf.format_value(vals, &ws);
-            build_word_row(*base_addr + sr, &hex_str, &value_str, rv, i == selected && is_active, addr_fmt)
-        }).collect();
+        let rs: Vec<Row> = grouped
+            .iter()
+            .enumerate()
+            .map(|(i, (base_addr, vals))| {
+                let rv = regs.get(base_addr).unwrap();
+                let hex_str = vals
+                    .iter()
+                    .map(|v| format!("{:04X}", v))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let ws = crate::format::WordSwap {
+                    ints: state.config.swap_ints,
+                    floats: state.config.swap_floats,
+                };
+                let value_str = nf.format_value(vals, &ws);
+                build_word_row(
+                    *base_addr + sr,
+                    &hex_str,
+                    &value_str,
+                    rv,
+                    i == selected && is_active,
+                    addr_fmt,
+                )
+            })
+            .collect();
 
         // Value column width depends on actual format
         let val_width = match nf {
@@ -379,8 +473,11 @@ fn draw_register_pane(
             _ => 22,
         };
         let w = vec![
-            Constraint::Length(8), Constraint::Length(hex_width), Constraint::Length(val_width),
-            Constraint::Length(23), Constraint::Min(5),
+            Constraint::Length(8),
+            Constraint::Length(hex_width),
+            Constraint::Length(val_width),
+            Constraint::Length(23),
+            Constraint::Min(5),
         ];
         (hdr, rs, w, display_count)
     };
@@ -391,7 +488,11 @@ fn draw_register_pane(
     let table = Table::new(rows, &widths)
         .header(header)
         .block(block)
-        .row_highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
+        .row_highlight_style(
+            Style::default()
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        )
         .column_spacing(1);
 
     let mut table_state = ratatui::widgets::TableState::default();
@@ -406,21 +507,35 @@ fn change_color(rv: &RegisterValue) -> Color {
     if !rv.recently_changed() {
         return Color::Reset;
     }
-    let elapsed = rv.changed_at.map(|t| t.elapsed().as_millis()).unwrap_or(u128::MAX);
-    if elapsed < (CHANGE_HIGHLIGHT_SECS as u128 * 1000 / 3) { Color::Yellow }
-    else if elapsed < (CHANGE_HIGHLIGHT_SECS as u128 * 1000 * 2 / 3) { Color::Rgb(180, 180, 0) }
-    else { Color::Rgb(120, 120, 0) }
+    let elapsed = rv
+        .changed_at
+        .map(|t| t.elapsed().as_millis())
+        .unwrap_or(u128::MAX);
+    if elapsed < (CHANGE_HIGHLIGHT_SECS as u128 * 1000 / 3) {
+        Color::Yellow
+    } else if elapsed < (CHANGE_HIGHLIGHT_SECS as u128 * 1000 * 2 / 3) {
+        Color::Rgb(180, 180, 0)
+    } else {
+        Color::Rgb(120, 120, 0)
+    }
 }
 
 fn styles_for_row(rv: &RegisterValue, is_selected: bool) -> (Style, Style, Color) {
     let cc = change_color(rv);
     let recently = rv.recently_changed();
     let base = if is_selected {
-        Style::default().bg(Color::DarkGray).fg(Color::White).add_modifier(Modifier::BOLD)
-    } else { Style::default() };
+        Style::default()
+            .bg(Color::DarkGray)
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    };
     let value = if recently && !is_selected {
         Style::default().fg(cc).add_modifier(Modifier::BOLD)
-    } else { base };
+    } else {
+        base
+    };
     (base, value, cc)
 }
 
@@ -433,7 +548,11 @@ fn format_addr(addr: u16, fmt: crate::app::AddrFormat) -> String {
 
 /// Row for word registers: Addr, Hex, Value (formatted), Timestamp, Label
 fn build_word_row<'a>(
-    addr: u16, hex_str: &str, value_str: &str, rv: &RegisterValue, is_selected: bool,
+    addr: u16,
+    hex_str: &str,
+    value_str: &str,
+    rv: &RegisterValue,
+    is_selected: bool,
     addr_format: crate::app::AddrFormat,
 ) -> Row<'a> {
     let (base, value_style, cc) = styles_for_row(rv, is_selected);
@@ -441,7 +560,9 @@ fn build_word_row<'a>(
     let addr_str = format_addr(addr, addr_format);
     let addr_cell = if rv.recently_changed() && !is_selected {
         Cell::from(addr_str).style(Style::default().fg(cc))
-    } else { Cell::from(addr_str).style(base) };
+    } else {
+        Cell::from(addr_str).style(base)
+    };
 
     Row::new(vec![
         addr_cell,
@@ -454,7 +575,9 @@ fn build_word_row<'a>(
 
 /// Row for coils / discrete inputs: Addr, Value (ON/OFF), Timestamp, Label
 fn build_coil_row<'a>(
-    addr: u16, rv: &RegisterValue, is_selected: bool,
+    addr: u16,
+    rv: &RegisterValue,
+    is_selected: bool,
     addr_format: crate::app::AddrFormat,
 ) -> Row<'a> {
     let (base, _value_style, cc) = styles_for_row(rv, is_selected);
@@ -463,7 +586,9 @@ fn build_coil_row<'a>(
     let addr_str = format_addr(addr, addr_format);
     let addr_cell = if recently && !is_selected {
         Cell::from(addr_str).style(Style::default().fg(cc))
-    } else { Cell::from(addr_str).style(base) };
+    } else {
+        Cell::from(addr_str).style(base)
+    };
 
     let val_text = if rv.raw != 0 { "ON" } else { "OFF" };
 
@@ -489,15 +614,23 @@ fn build_coil_row<'a>(
 
 fn draw_log(frame: &mut Frame, state: &AppState, area: Rect) {
     let focused = state.ui.focus == FocusPane::Log;
-    let border_style = if focused { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::DarkGray) };
+    let border_style = if focused {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
 
     let scroll_indicator = if state.ui.log_scroll > 0 {
         format!(" Log [+{}] ", state.ui.log_scroll)
-    } else { " Log ".to_string() };
+    } else {
+        " Log ".to_string()
+    };
 
     let block = Block::default()
-        .borders(Borders::ALL).border_style(border_style)
-        .title(scroll_indicator).title_alignment(Alignment::Left);
+        .borders(Borders::ALL)
+        .border_style(border_style)
+        .title(scroll_indicator)
+        .title_alignment(Alignment::Left);
 
     let entries = &state.log.entries;
     let inner_height = area.height.saturating_sub(2) as usize;
@@ -506,18 +639,29 @@ fn draw_log(frame: &mut Frame, state: &AppState, area: Rect) {
     let end = entries.len().saturating_sub(scroll);
     let start = end.saturating_sub(inner_height);
 
-    let items: Vec<ListItem> = entries.iter().skip(start).take(end - start).map(|entry| {
-        let (level_style, level_tag) = match entry.level {
-            LogLevel::Info => (Style::default().fg(Color::Green), "INFO"),
-            LogLevel::Warn => (Style::default().fg(Color::Yellow), "WARN"),
-            LogLevel::Error => (Style::default().fg(Color::Red).add_modifier(Modifier::BOLD), "ERR "),
-        };
-        ListItem::new(Line::from(vec![
-            Span::styled(format!("{} ", entry.wall_clock), Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("[{level_tag}] "), level_style),
-            Span::raw(&entry.message),
-        ]))
-    }).collect();
+    let items: Vec<ListItem> = entries
+        .iter()
+        .skip(start)
+        .take(end - start)
+        .map(|entry| {
+            let (level_style, level_tag) = match entry.level {
+                LogLevel::Info => (Style::default().fg(Color::Green), "INFO"),
+                LogLevel::Warn => (Style::default().fg(Color::Yellow), "WARN"),
+                LogLevel::Error => (
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                    "ERR ",
+                ),
+            };
+            ListItem::new(Line::from(vec![
+                Span::styled(
+                    format!("{} ", entry.wall_clock),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(format!("[{level_tag}] "), level_style),
+                Span::raw(&entry.message),
+            ]))
+        })
+        .collect();
 
     frame.render_widget(List::new(items).block(block), area);
 }
@@ -542,7 +686,10 @@ fn draw_bottom_bar(frame: &mut Frame, state: &AppState, area: Rect) {
                 Span::styled("_", Style::default().add_modifier(Modifier::SLOW_BLINK)),
             ])
         };
-        frame.render_widget(Paragraph::new(text).style(Style::default().bg(Color::Rgb(30, 30, 30))), area);
+        frame.render_widget(
+            Paragraph::new(text).style(Style::default().bg(Color::Rgb(30, 30, 30))),
+            area,
+        );
     }
 }
 
@@ -552,7 +699,12 @@ fn draw_bottom_bar(frame: &mut Frame, state: &AppState, area: Rect) {
 
 fn draw_write_dialog(frame: &mut Frame, state: &AppState) {
     let (addr, tab_index, input, error) = match &state.ui.input_mode {
-        InputMode::WriteDialog { addr, tab_index, input, error } => (*addr, *tab_index, input.as_str(), error.as_deref()),
+        InputMode::WriteDialog {
+            addr,
+            tab_index,
+            input,
+            error,
+        } => (*addr, *tab_index, input.as_str(), error.as_deref()),
         _ => return,
     };
 
@@ -565,14 +717,34 @@ fn draw_write_dialog(frame: &mut Frame, state: &AppState) {
 
     frame.render_widget(Clear, dialog_area);
 
-    let pane_fmt = state.ui.panes.get(tab_index).map(|p| p.addr_format).unwrap_or_default();
-    let range_label = state.config.ranges.get(tab_index).map(|r| r.tab_label(state.config.start_reference, pane_fmt)).unwrap_or_default();
+    let pane_fmt = state
+        .ui
+        .panes
+        .get(tab_index)
+        .map(|p| p.addr_format)
+        .unwrap_or_default();
+    let range_label = state
+        .config
+        .ranges
+        .get(tab_index)
+        .map(|r| r.tab_label(state.config.start_reference, pane_fmt))
+        .unwrap_or_default();
 
-    let is_coils = state.config.ranges.get(tab_index).map(|r| r.reg_type.is_coil_type()).unwrap_or(false);
+    let is_coils = state
+        .config
+        .ranges
+        .get(tab_index)
+        .map(|r| r.reg_type.is_coil_type())
+        .unwrap_or(false);
     let nf = if is_coils {
         NumFormat::Uint16
     } else {
-        state.ui.panes.get(tab_index).map(|p| p.num_format).unwrap_or_default()
+        state
+            .ui
+            .panes
+            .get(tab_index)
+            .map(|p| p.num_format)
+            .unwrap_or_default()
     };
 
     // Show current value in the active numeric format
@@ -597,12 +769,22 @@ fn draw_write_dialog(frame: &mut Frame, state: &AppState) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow))
-        .title(Span::styled(title, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
+        .title(Span::styled(
+            title,
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ));
 
     let format_label = if is_coils {
         "0/1".to_string()
     } else {
-        format!("{} ({} reg{})", nf.column_header(), nf.width(), if nf.width() > 1 { "s" } else { "" })
+        format!(
+            "{} ({} reg{})",
+            nf.column_header(),
+            nf.width(),
+            if nf.width() > 1 { "s" } else { "" }
+        )
     };
 
     let mut lines = vec![
@@ -622,7 +804,10 @@ fn draw_write_dialog(frame: &mut Frame, state: &AppState) {
     ];
 
     if let Some(err) = error {
-        lines.push(Line::from(Span::styled(format!("  {err}"), Style::default().fg(Color::Red))));
+        lines.push(Line::from(Span::styled(
+            format!("  {err}"),
+            Style::default().fg(Color::Red),
+        )));
     } else {
         lines.push(Line::from(Span::styled(
             "  Enter=confirm  Esc=cancel  (dec, 0x hex, 0b bin)",
@@ -639,7 +824,11 @@ fn draw_write_dialog(frame: &mut Frame, state: &AppState) {
 
 fn draw_label_dialog(frame: &mut Frame, state: &AppState) {
     let (addr, tab_index, input) = match &state.ui.input_mode {
-        InputMode::LabelDialog { addr, tab_index, input } => (*addr, *tab_index, input.as_str()),
+        InputMode::LabelDialog {
+            addr,
+            tab_index,
+            input,
+        } => (*addr, *tab_index, input.as_str()),
         _ => return,
     };
 
@@ -652,7 +841,12 @@ fn draw_label_dialog(frame: &mut Frame, state: &AppState) {
 
     frame.render_widget(Clear, dialog_area);
 
-    let pane_fmt = state.ui.panes.get(tab_index).map(|p| p.addr_format).unwrap_or_default();
+    let pane_fmt = state
+        .ui
+        .panes
+        .get(tab_index)
+        .map(|p| p.addr_format)
+        .unwrap_or_default();
     let display_addr = addr + state.config.start_reference;
     let addr_str = match pane_fmt {
         crate::app::AddrFormat::Hex => format!("0x{:04X}", display_addr),
@@ -662,7 +856,12 @@ fn draw_label_dialog(frame: &mut Frame, state: &AppState) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan))
-        .title(Span::styled(title, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
+        .title(Span::styled(
+            title,
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ));
 
     let lines = vec![
         Line::from(vec![
@@ -694,9 +893,13 @@ fn draw_help_dialog(frame: &mut Frame) {
 
     frame.render_widget(Clear, dialog_area);
 
-    let key_style = Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD);
+    let key_style = Style::default()
+        .fg(Color::Yellow)
+        .add_modifier(Modifier::BOLD);
     let desc_style = Style::default().fg(Color::White);
-    let section_style = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD);
+    let section_style = Style::default()
+        .fg(Color::Cyan)
+        .add_modifier(Modifier::BOLD);
 
     let help = |key: &str, desc: &str| -> Line<'static> {
         Line::from(vec![
@@ -741,7 +944,9 @@ fn draw_help_dialog(frame: &mut Frame) {
         .border_style(Style::default().fg(Color::Cyan))
         .title(Span::styled(
             " Help ",
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         ));
 
     frame.render_widget(Paragraph::new(lines).block(block), dialog_area);
@@ -767,7 +972,9 @@ fn draw_format_dialog(frame: &mut Frame, selected: usize) {
     for (i, fmt) in NumFormat::ALL.iter().enumerate() {
         let marker = if i == selected { ">" } else { " " };
         let style = if i == selected {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::White)
         };
@@ -788,7 +995,9 @@ fn draw_format_dialog(frame: &mut Frame, selected: usize) {
         .border_style(Style::default().fg(Color::Yellow))
         .title(Span::styled(
             " Numeric Format ",
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
         ));
 
     frame.render_widget(Paragraph::new(lines).block(block), dialog_area);

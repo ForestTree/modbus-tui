@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
-use tokio_modbus::client::{Context, Reader, Writer, tcp};
 use tokio_modbus::Slave;
+use tokio_modbus::client::{Context, Reader, Writer, tcp};
 
 use crate::app::{ConnectionStatus, RegisterValue, SharedState, WriteRx};
 use crate::config::{PollRange, RegisterType};
@@ -48,7 +48,8 @@ async fn run(state: SharedState, mut write_rx: WriteRx) {
         {
             let mut s = state.lock().await;
             s.connection = ConnectionStatus::Connecting;
-            s.log.info(format!("connecting to {socket_addr} slave={}", slave.0));
+            s.log
+                .info(format!("connecting to {socket_addr} slave={}", slave.0));
         }
 
         let mut ctx = match tcp::connect_slave(socket_addr, slave).await {
@@ -90,7 +91,8 @@ async fn run(state: SharedState, mut write_rx: WriteRx) {
             while let Ok(req) = write_rx.try_recv() {
                 let reg_type = ranges.get(req.tab_index).map(|r| r.reg_type);
                 if let Some(rt) = reg_type {
-                    if let Err(msg) = execute_write(&mut ctx, rt, req.addr, &req.values, &state).await
+                    if let Err(msg) =
+                        execute_write(&mut ctx, rt, req.addr, &req.values, &state).await
                     {
                         let mut s = state.lock().await;
                         s.log.error(format!("write failed: {msg}"));
@@ -106,7 +108,10 @@ async fn run(state: SharedState, mut write_rx: WriteRx) {
                     Ok(()) => {}
                     Err(msg) => {
                         let mut s = state.lock().await;
-                        s.log.error(format!("{}: {msg}", range.tab_label(sr, crate::app::AddrFormat::default())));
+                        s.log.error(format!(
+                            "{}: {msg}",
+                            range.tab_label(sr, crate::app::AddrFormat::default())
+                        ));
                         had_error = true;
                         break;
                     }
@@ -220,7 +225,9 @@ async fn execute_write(
                 let mut s = state.lock().await;
                 s.log.info(format!(
                     "wrote {} registers at 0x{:04X}: [{}]",
-                    values.len(), addr, vals_str.join(", ")
+                    values.len(),
+                    addr,
+                    vals_str.join(", ")
                 ));
             }
         }
@@ -230,7 +237,8 @@ async fn execute_write(
                 .map_err(|e| format!("{e}"))?
                 .map_err(|ex| format!("exception: {ex}"))?;
             let mut s = state.lock().await;
-            s.log.info(format!("wrote coil 0x{:04X} = {}", addr, values[0] != 0));
+            s.log
+                .info(format!("wrote coil 0x{:04X} = {}", addr, values[0] != 0));
         }
         _ => {
             return Err("cannot write to read-only register type".to_string());
@@ -248,7 +256,9 @@ fn store_word_values(map: &mut BTreeMap<u16, RegisterValue>, start: u16, values:
         let addr = start + i as u16;
         match map.get_mut(&addr) {
             Some(rv) => rv.update(val),
-            None => { map.insert(addr, RegisterValue::new(val)); }
+            None => {
+                map.insert(addr, RegisterValue::new(val));
+            }
         }
     }
 }
@@ -259,7 +269,9 @@ fn store_bool_values(map: &mut BTreeMap<u16, RegisterValue>, start: u16, values:
         let raw = val as u16;
         match map.get_mut(&addr) {
             Some(rv) => rv.update(raw),
-            None => { map.insert(addr, RegisterValue::new(raw)); }
+            None => {
+                map.insert(addr, RegisterValue::new(raw));
+            }
         }
     }
 }

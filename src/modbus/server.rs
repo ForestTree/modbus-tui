@@ -4,8 +4,8 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex as StdMutex};
 
 use tokio::net::TcpListener;
-use tokio_modbus::server::tcp::Server;
 use tokio_modbus::server::Service;
+use tokio_modbus::server::tcp::Server;
 use tokio_modbus::{ExceptionCode, Request, Response};
 
 use crate::app::{SharedState, ShutdownRx};
@@ -230,7 +230,9 @@ struct DisconnectGuard {
 
 impl Drop for DisconnectGuard {
     fn drop(&mut self) {
-        let _ = self.event_tx.send(ServerEvent::ClientDisconnected(self.peer));
+        let _ = self
+            .event_tx
+            .send(ServerEvent::ClientDisconnected(self.peer));
     }
 }
 
@@ -308,7 +310,10 @@ async fn run(state: SharedState, mut shutdown_rx: ShutdownRx) {
                 peer: socket_addr,
                 event_tx,
             });
-            let svc = GuardedService { service, _guard: guard };
+            let svc = GuardedService {
+                service,
+                _guard: guard,
+            };
             Ok(Some((svc, stream)))
         }
     };

@@ -41,7 +41,10 @@ impl std::str::FromStr for NumFormat {
             "f32" => Ok(Self::Float32),
             "f64" => Ok(Self::Float64),
             "b16" => Ok(Self::Bin16),
-            _ => Err(format!("unknown format '{}'; expected one of: u16, i16, u32, i32, u64, i64, f32, f64, b16", s)),
+            _ => Err(format!(
+                "unknown format '{}'; expected one of: u16, i16, u32, i32, u64, i64, f32, f64, b16",
+                s
+            )),
         }
     }
 }

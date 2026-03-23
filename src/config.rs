@@ -198,7 +198,12 @@ impl AppConfig {
                         if let Some(s) = cli.coils.get(co_idx) {
                             let (user_start, count) = parse_range(s, "coils")?;
                             let start = user_to_protocol(user_start, sr, "coils")?;
-                            ranges.push(PollRange { reg_type: RegisterType::Coils, start, count, initial_format: None });
+                            ranges.push(PollRange {
+                                reg_type: RegisterType::Coils,
+                                start,
+                                count,
+                                initial_format: None,
+                            });
                             co_idx += 1;
                         }
                     }
@@ -206,23 +211,40 @@ impl AppConfig {
                         if let Some(s) = cli.discrete_inputs.get(di_idx) {
                             let (user_start, count) = parse_range(s, "discrete-inputs")?;
                             let start = user_to_protocol(user_start, sr, "discrete-inputs")?;
-                            ranges.push(PollRange { reg_type: RegisterType::DiscreteInputs, start, count, initial_format: None });
+                            ranges.push(PollRange {
+                                reg_type: RegisterType::DiscreteInputs,
+                                start,
+                                count,
+                                initial_format: None,
+                            });
                             di_idx += 1;
                         }
                     }
                     "--holding-registers" | "--hr" => {
                         if let Some(s) = cli.holding_registers.get(hr_idx) {
-                            let (user_start, count, fmt) = parse_range_with_format(s, "holding-registers")?;
+                            let (user_start, count, fmt) =
+                                parse_range_with_format(s, "holding-registers")?;
                             let start = user_to_protocol(user_start, sr, "holding-registers")?;
-                            ranges.push(PollRange { reg_type: RegisterType::HoldingRegisters, start, count, initial_format: fmt });
+                            ranges.push(PollRange {
+                                reg_type: RegisterType::HoldingRegisters,
+                                start,
+                                count,
+                                initial_format: fmt,
+                            });
                             hr_idx += 1;
                         }
                     }
                     "--input-registers" | "--ir" => {
                         if let Some(s) = cli.input_registers.get(ir_idx) {
-                            let (user_start, count, fmt) = parse_range_with_format(s, "input-registers")?;
+                            let (user_start, count, fmt) =
+                                parse_range_with_format(s, "input-registers")?;
                             let start = user_to_protocol(user_start, sr, "input-registers")?;
-                            ranges.push(PollRange { reg_type: RegisterType::InputRegisters, start, count, initial_format: fmt });
+                            ranges.push(PollRange {
+                                reg_type: RegisterType::InputRegisters,
+                                start,
+                                count,
+                                initial_format: fmt,
+                            });
                             ir_idx += 1;
                         }
                     }
@@ -270,7 +292,11 @@ impl AppConfig {
             );
         }
         for (i, r) in self.ranges.iter().enumerate() {
-            let label = format!("range[{}] ({})", i, r.tab_label(self.start_reference, crate::app::AddrFormat::default()));
+            let label = format!(
+                "range[{}] ({})",
+                i,
+                r.tab_label(self.start_reference, crate::app::AddrFormat::default())
+            );
             if r.count == 0 {
                 bail!("{label}: count must be > 0");
             }
@@ -302,7 +328,10 @@ fn parse_range(s: &str, name: &str) -> Result<(u16, u16)> {
 }
 
 /// Parse "START:COUNT" or "START:COUNT:FMT" where FMT is a NumFormat code.
-fn parse_range_with_format(s: &str, name: &str) -> Result<(u16, u16, Option<crate::format::NumFormat>)> {
+fn parse_range_with_format(
+    s: &str,
+    name: &str,
+) -> Result<(u16, u16, Option<crate::format::NumFormat>)> {
     let parts: Vec<&str> = s.split(':').collect();
     match parts.len() {
         2 => {
@@ -312,7 +341,9 @@ fn parse_range_with_format(s: &str, name: &str) -> Result<(u16, u16, Option<crat
         3 => {
             let range_str = format!("{}:{}", parts[0], parts[1]);
             let (start, count) = parse_range(&range_str, name)?;
-            let nf: crate::format::NumFormat = parts[2].parse().map_err(|e: String| anyhow::anyhow!("{name}: {e}"))?;
+            let nf: crate::format::NumFormat = parts[2]
+                .parse()
+                .map_err(|e: String| anyhow::anyhow!("{name}: {e}"))?;
             Ok((start, count, Some(nf)))
         }
         _ => bail!("{name}: expected format START:COUNT[:FMT], got \"{s}\""),
@@ -322,9 +353,7 @@ fn parse_range_with_format(s: &str, name: &str) -> Result<(u16, u16, Option<crat
 /// Convert user-facing address to protocol address by subtracting start_reference.
 fn user_to_protocol(user_addr: u16, start_reference: u16, name: &str) -> Result<u16> {
     if user_addr < start_reference {
-        bail!(
-            "{name}: address {user_addr} is below start reference {start_reference}"
-        );
+        bail!("{name}: address {user_addr} is below start reference {start_reference}");
     }
     Ok(user_addr - start_reference)
 }

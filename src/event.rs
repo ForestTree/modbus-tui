@@ -99,10 +99,16 @@ fn handle_normal(state: &mut AppState, key: KeyEvent) {
         // Format dialog (only for word register panes, not coils)
         KeyCode::Char('f') => {
             if !state.active_tab_is_coils() && state.tab_count() > 0 {
-                let current = state.ui.panes.get(state.ui.active_tab)
+                let current = state
+                    .ui
+                    .panes
+                    .get(state.ui.active_tab)
                     .map(|p| p.num_format)
                     .unwrap_or_default();
-                let sel = NumFormat::ALL.iter().position(|f| *f == current).unwrap_or(0);
+                let sel = NumFormat::ALL
+                    .iter()
+                    .position(|f| *f == current)
+                    .unwrap_or(0);
                 state.ui.input_mode = InputMode::FormatDialog { selected: sel };
             }
         }
@@ -111,7 +117,9 @@ fn handle_normal(state: &mut AppState, key: KeyEvent) {
         KeyCode::Char('l') => {
             if state.tab_count() > 0 {
                 if let Some(addr) = state.selected_addr() {
-                    let existing = state.registers.get(state.ui.active_tab)
+                    let existing = state
+                        .registers
+                        .get(state.ui.active_tab)
                         .and_then(|m| m.get(&addr))
                         .and_then(|rv| rv.label.clone())
                         .unwrap_or_default();
@@ -237,7 +245,11 @@ fn handle_format_dialog(state: &mut AppState, key: KeyEvent) {
 
 fn handle_label_dialog(state: &mut AppState, key: KeyEvent) {
     let (addr, tab_index, mut input) = match state.ui.input_mode.clone() {
-        InputMode::LabelDialog { addr, tab_index, input } => (addr, tab_index, input),
+        InputMode::LabelDialog {
+            addr,
+            tab_index,
+            input,
+        } => (addr, tab_index, input),
         _ => return,
     };
 
@@ -255,11 +267,19 @@ fn handle_label_dialog(state: &mut AppState, key: KeyEvent) {
         }
         KeyCode::Backspace => {
             input.pop();
-            state.ui.input_mode = InputMode::LabelDialog { addr, tab_index, input };
+            state.ui.input_mode = InputMode::LabelDialog {
+                addr,
+                tab_index,
+                input,
+            };
         }
         KeyCode::Char(c) => {
             input.push(c);
-            state.ui.input_mode = InputMode::LabelDialog { addr, tab_index, input };
+            state.ui.input_mode = InputMode::LabelDialog {
+                addr,
+                tab_index,
+                input,
+            };
         }
         _ => {}
     }
@@ -271,7 +291,12 @@ fn handle_label_dialog(state: &mut AppState, key: KeyEvent) {
 
 fn handle_write_dialog(state: &mut AppState, key: KeyEvent) {
     let (addr, tab_index, mut input, _error) = match state.ui.input_mode.clone() {
-        InputMode::WriteDialog { addr, tab_index, input, error } => (addr, tab_index, input, error),
+        InputMode::WriteDialog {
+            addr,
+            tab_index,
+            input,
+            error,
+        } => (addr, tab_index, input, error),
         _ => return,
     };
 
@@ -279,7 +304,10 @@ fn handle_write_dialog(state: &mut AppState, key: KeyEvent) {
     let nf = if state.active_tab_is_coils() {
         NumFormat::Uint16
     } else {
-        state.ui.panes.get(tab_index)
+        state
+            .ui
+            .panes
+            .get(tab_index)
             .map(|p| p.num_format)
             .unwrap_or_default()
     };
@@ -296,14 +324,19 @@ fn handle_write_dialog(state: &mut AppState, key: KeyEvent) {
             match nf.parse_value(&input, &ws) {
                 Ok(values) => {
                     if let Some(ref tx) = state.write_tx {
-                        let vals_display: Vec<String> = values.iter()
-                            .map(|v| format!("0x{:04X}", v))
-                            .collect();
-                        let req = WriteRequest { tab_index, addr, values };
+                        let vals_display: Vec<String> =
+                            values.iter().map(|v| format!("0x{:04X}", v)).collect();
+                        let req = WriteRequest {
+                            tab_index,
+                            addr,
+                            values,
+                        };
                         if tx.send(req).is_ok() {
                             state.log.info(format!(
                                 "write request: addr=0x{:04X} [{}] ({})",
-                                addr, input.trim(), vals_display.join(", ")
+                                addr,
+                                input.trim(),
+                                vals_display.join(", ")
                             ));
                         }
                     }
@@ -311,7 +344,9 @@ fn handle_write_dialog(state: &mut AppState, key: KeyEvent) {
                 }
                 Err(e) => {
                     state.ui.input_mode = InputMode::WriteDialog {
-                        addr, tab_index, input,
+                        addr,
+                        tab_index,
+                        input,
                         error: Some(e),
                     };
                 }
@@ -319,11 +354,21 @@ fn handle_write_dialog(state: &mut AppState, key: KeyEvent) {
         }
         KeyCode::Backspace => {
             input.pop();
-            state.ui.input_mode = InputMode::WriteDialog { addr, tab_index, input, error: None };
+            state.ui.input_mode = InputMode::WriteDialog {
+                addr,
+                tab_index,
+                input,
+                error: None,
+            };
         }
         KeyCode::Char(c) => {
             input.push(c);
-            state.ui.input_mode = InputMode::WriteDialog { addr, tab_index, input, error: None };
+            state.ui.input_mode = InputMode::WriteDialog {
+                addr,
+                tab_index,
+                input,
+                error: None,
+            };
         }
         _ => {}
     }
@@ -378,7 +423,9 @@ fn execute_command(state: &mut AppState, cmd: &str) {
                     state.log.info(format!("poll interval changed to {ms} ms"));
                 }
                 Ok(ms) => {
-                    state.log.error(format!("poll interval {ms} out of range (10..60000)"));
+                    state
+                        .log
+                        .error(format!("poll interval {ms} out of range (10..60000)"));
                 }
                 Err(e) => {
                     state.log.error(format!("invalid poll interval: {e}"));
@@ -386,7 +433,11 @@ fn execute_command(state: &mut AppState, cmd: &str) {
             }
         }
         "export" => {
-            let path = if parts.len() > 1 { parts[1] } else { "registers.json" };
+            let path = if parts.len() > 1 {
+                parts[1]
+            } else {
+                "registers.json"
+            };
             export_registers(state, path);
         }
         _ => {
@@ -405,7 +456,12 @@ fn export_registers(state: &mut AppState, path: &str) {
         if regs.is_empty() {
             continue;
         }
-        let fmt = state.ui.panes.get(i).map(|p| p.addr_format).unwrap_or_default();
+        let fmt = state
+            .ui
+            .panes
+            .get(i)
+            .map(|p| p.addr_format)
+            .unwrap_or_default();
         let section = range.tab_label(state.config.start_reference, fmt);
         let m: BTreeMap<String, u16> = regs
             .iter()
@@ -422,4 +478,3 @@ fn export_registers(state: &mut AppState, path: &str) {
         Err(e) => state.log.error(format!("export serialization failed: {e}")),
     }
 }
-

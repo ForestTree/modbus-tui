@@ -114,7 +114,10 @@ impl AppState {
 
     /// RegisterType for the currently active tab.
     pub fn active_tab_type(&self) -> Option<RegisterType> {
-        self.config.ranges.get(self.ui.active_tab).map(|r| r.reg_type)
+        self.config
+            .ranges
+            .get(self.ui.active_tab)
+            .map(|r| r.reg_type)
     }
 
     /// Get the protocol address of the currently selected row in the active pane,
@@ -258,9 +261,15 @@ impl LogBuffer {
         });
     }
 
-    pub fn info(&mut self, message: impl Into<String>) { self.push(LogLevel::Info, message); }
-    pub fn warn(&mut self, message: impl Into<String>) { self.push(LogLevel::Warn, message); }
-    pub fn error(&mut self, message: impl Into<String>) { self.push(LogLevel::Error, message); }
+    pub fn info(&mut self, message: impl Into<String>) {
+        self.push(LogLevel::Info, message);
+    }
+    pub fn warn(&mut self, message: impl Into<String>) {
+        self.push(LogLevel::Warn, message);
+    }
+    pub fn error(&mut self, message: impl Into<String>) {
+        self.push(LogLevel::Error, message);
+    }
 }
 
 // ---------------------------------------------------------------------------
