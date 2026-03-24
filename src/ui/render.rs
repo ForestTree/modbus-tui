@@ -52,10 +52,18 @@ fn draw_status_bar(frame: &mut Frame, state: &AppState, area: Rect) {
     let target_str = format!("{}:{}", state.config.host, state.config.port);
     let unit_str = format!("unit={}", state.config.unit);
 
+    let is_server = state.config.mode == Mode::Server;
+
     let (conn_text, conn_color) = match &state.connection {
         ConnectionStatus::Disconnected => ("Disconnected", Color::Gray),
         ConnectionStatus::Connecting => ("Connecting…", Color::Yellow),
-        ConnectionStatus::Connected => ("Connected", Color::Green),
+        ConnectionStatus::Connected => {
+            if is_server {
+                ("Bound", Color::Green)
+            } else {
+                ("Connected", Color::Green)
+            }
+        }
         ConnectionStatus::Error(_) => ("", Color::Red),
     };
 
@@ -71,14 +79,9 @@ fn draw_status_bar(frame: &mut Frame, state: &AppState, area: Rect) {
         )
     };
 
-    let poll_span = Span::styled(
-        format!("poll={}ms", state.config.poll_interval_ms),
-        Style::default().fg(Color::DarkGray),
-    );
-
     let sep = Span::styled(" | ", Style::default().fg(Color::DarkGray));
 
-    let mut status_line = Line::from(vec![
+    let mut spans = vec![
         Span::styled(
             format!(" {mode_str} "),
             Style::default()
@@ -92,18 +95,25 @@ fn draw_status_bar(frame: &mut Frame, state: &AppState, area: Rect) {
         Span::styled(unit_str, Style::default().fg(Color::DarkGray)),
         sep.clone(),
         conn_span,
-        sep.clone(),
-        poll_span,
-        sep.clone(),
-        Span::styled(
-            if state.config.start_reference == 0 {
-                "0-based addressing"
-            } else {
-                "1-based addressing"
-            },
+    ];
+
+    if !is_server {
+        spans.push(sep.clone());
+        spans.push(Span::styled(
+            format!("poll={}ms", state.config.poll_interval_ms),
             Style::default().fg(Color::DarkGray),
-        ),
-    ]);
+        ));
+    }
+
+    spans.push(sep.clone());
+    spans.push(Span::styled(
+        if state.config.start_reference == 0 {
+            "0-based addressing"
+        } else {
+            "1-based addressing"
+        },
+        Style::default().fg(Color::DarkGray),
+    ));
 
     // Word-swap indicator
     let swap_label = match (state.config.swap_ints, state.config.swap_floats) {
@@ -113,11 +123,11 @@ fn draw_status_bar(frame: &mut Frame, state: &AppState, area: Rect) {
         (false, false) => None,
     };
     if let Some(label) = swap_label {
-        status_line.spans.push(sep);
-        status_line
-            .spans
-            .push(Span::styled(label, Style::default().fg(Color::DarkGray)));
+        spans.push(sep);
+        spans.push(Span::styled(label, Style::default().fg(Color::DarkGray)));
     }
+
+    let status_line = Line::from(spans);
 
     let block = Block::default().borders(Borders::ALL).title(Span::styled(
         " modbus-tui ",
@@ -135,7 +145,19 @@ fn draw_status_bar(frame: &mut Frame, state: &AppState, area: Rect) {
 
 fn draw_content(frame: &mut Frame, state: &AppState, area: Rect) {
     match state.config.mode {
-        Mode::Server => draw_server_content(frame, state, area),
+        Mode::Server => {
+            if state.config.ranges.is_empty() {
+                draw_server_content(frame, state, area);
+            } else {
+                // Register grid + server stats below
+                let chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Min(6), Constraint::Length(8)])
+                    .split(area);
+                draw_register_grid(frame, state, chunks[0]);
+                draw_server_content(frame, state, chunks[1]);
+            }
+        }
         Mode::Client => {
             if state.config.ranges.is_empty() {
                 let block = Block::default()
@@ -147,7 +169,6 @@ fn draw_content(frame: &mut Frame, state: &AppState, area: Rect) {
                 frame.render_widget(msg, area);
                 return;
             }
-
             draw_register_grid(frame, state, area);
         }
     }
@@ -568,7 +589,7 @@ fn build_word_row<'a>(
         addr_cell,
         Cell::from(hex_str.to_string()).style(value_style),
         Cell::from(value_str.to_string()).style(value_style),
-        Cell::from(rv.changed_wall.clone()).style(base),
+        Cell::from(rv.changed_wall.clone()).style(value_style),
         Cell::from(rv.label.as_deref().unwrap_or("").to_string()).style(base),
     ])
 }
@@ -603,7 +624,7 @@ fn build_coil_row<'a>(
     Row::new(vec![
         addr_cell,
         Cell::from(val_text).style(val_style),
-        Cell::from(rv.changed_wall.clone()).style(base),
+        Cell::from(rv.changed_wall.clone()).style(val_style),
         Cell::from(rv.label.as_deref().unwrap_or("").to_string()).style(base),
     ])
 }

@@ -8,7 +8,8 @@ use tokio_modbus::server::Service;
 use tokio_modbus::server::tcp::Server;
 use tokio_modbus::{ExceptionCode, Request, Response};
 
-use crate::app::{SharedState, ShutdownRx};
+use crate::app::{RegisterValue, SharedState, ShutdownRx};
+use crate::config::RegisterType;
 
 // ---------------------------------------------------------------------------
 // Register data store (shared across connections via Arc<StdMutex<..>>)
@@ -240,11 +241,14 @@ impl Drop for DisconnectGuard {
 // Spawn the server
 // ---------------------------------------------------------------------------
 
-pub fn spawn(state: SharedState, shutdown_rx: ShutdownRx) {
-    tokio::spawn(async move { run(state, shutdown_rx).await });
+pub fn spawn(state: SharedState, shutdown_rx: ShutdownRx) -> Arc<StdMutex<RegisterStore>> {
+    let store = Arc::new(StdMutex::new(RegisterStore::default()));
+    let store_clone = Arc::clone(&store);
+    tokio::spawn(async move { run(state, shutdown_rx, store_clone).await });
+    store
 }
 
-async fn run(state: SharedState, mut shutdown_rx: ShutdownRx) {
+async fn run(state: SharedState, mut shutdown_rx: ShutdownRx, store: Arc<StdMutex<RegisterStore>>) {
     let (host, port, initial_values) = {
         let s = state.lock().await;
         (
@@ -282,9 +286,10 @@ async fn run(state: SharedState, mut shutdown_rx: ShutdownRx) {
         }
     };
 
-    let store = Arc::new(StdMutex::new(RegisterStore::from_initial_values(
-        &initial_values,
-    )));
+    {
+        let mut s = store.lock().unwrap();
+        *s = RegisterStore::from_initial_values(&initial_values);
+    }
 
     let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
 
@@ -390,6 +395,67 @@ async fn drain_events(
             }
             ServerEvent::RequestOther => {
                 s.server.requests_other += 1;
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Store ↔ UI helpers
+// ---------------------------------------------------------------------------
+
+/// Sync RegisterStore values into AppState.registers for all configured ranges.
+pub fn sync_store_to_registers(store: &StdMutex<RegisterStore>, state: &mut crate::app::AppState) {
+    let store = store.lock().unwrap();
+    for (i, range) in state.config.ranges.iter().enumerate() {
+        let map = &mut state.registers[i];
+        for offset in 0..range.count {
+            let addr = range.start + offset;
+            let raw = match range.reg_type {
+                RegisterType::Coils => *store.coils.get(&addr).unwrap_or(&false) as u16,
+                RegisterType::DiscreteInputs => {
+                    *store.discrete_inputs.get(&addr).unwrap_or(&false) as u16
+                }
+                RegisterType::HoldingRegisters => *store.holding_registers.get(&addr).unwrap_or(&0),
+                RegisterType::InputRegisters => *store.input_registers.get(&addr).unwrap_or(&0),
+            };
+            match map.get_mut(&addr) {
+                Some(rv) => rv.update(raw),
+                None => {
+                    map.insert(addr, RegisterValue::new(raw));
+                }
+            }
+        }
+    }
+}
+
+/// Write values directly into the RegisterStore (server mode).
+pub fn write_to_store(
+    store: &StdMutex<RegisterStore>,
+    reg_type: RegisterType,
+    addr: u16,
+    values: &[u16],
+) {
+    let mut store = store.lock().unwrap();
+    match reg_type {
+        RegisterType::HoldingRegisters => {
+            for (i, &val) in values.iter().enumerate() {
+                store.holding_registers.insert(addr + i as u16, val);
+            }
+        }
+        RegisterType::InputRegisters => {
+            for (i, &val) in values.iter().enumerate() {
+                store.input_registers.insert(addr + i as u16, val);
+            }
+        }
+        RegisterType::Coils => {
+            for (i, &val) in values.iter().enumerate() {
+                store.coils.insert(addr + i as u16, val != 0);
+            }
+        }
+        RegisterType::DiscreteInputs => {
+            for (i, &val) in values.iter().enumerate() {
+                store.discrete_inputs.insert(addr + i as u16, val != 0);
             }
         }
     }

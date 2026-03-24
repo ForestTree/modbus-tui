@@ -6,7 +6,7 @@ use std::time::Instant;
 use chrono::Local;
 use tokio::sync::Mutex;
 
-use crate::config::AppConfig;
+use crate::config::{AppConfig, Mode};
 use crate::format::NumFormat;
 
 // ---------------------------------------------------------------------------
@@ -53,6 +53,8 @@ pub struct AppState {
     pub ui: UiState,
     pub server: ServerStats,
     pub write_tx: Option<WriteTx>,
+    /// Server mode: shared register store for direct reads/writes.
+    pub server_store: Option<Arc<std::sync::Mutex<crate::modbus::server::RegisterStore>>>,
 }
 
 #[derive(Debug, Default)]
@@ -78,6 +80,7 @@ impl AppState {
             ui: UiState::new(n),
             server: ServerStats::default(),
             write_tx: None,
+            server_store: None,
             config,
         }
     }
@@ -104,11 +107,12 @@ impl AppState {
     }
 
     /// Whether the currently active tab is writable.
+    /// In server mode all register types are writable (testing purposes).
     pub fn active_tab_is_writable(&self) -> bool {
         self.config
             .ranges
             .get(self.ui.active_tab)
-            .map(|r| r.reg_type.is_writable())
+            .map(|r| self.config.mode == Mode::Server || r.reg_type.is_writable())
             .unwrap_or(false)
     }
 
@@ -175,7 +179,7 @@ impl RegisterValue {
             raw,
             last_read: Instant::now(),
             label: None,
-            changed_at: Some(Instant::now()),
+            changed_at: None,
             prev_raw: None,
             changed_wall: Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
         }

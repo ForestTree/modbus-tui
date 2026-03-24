@@ -47,8 +47,8 @@ fn handle_normal(state: &mut AppState, key: KeyEvent) {
             };
         }
 
-        // Write dialog (client mode, writable register types)
-        KeyCode::Char('w') if state.config.mode == Mode::Client => {
+        // Write dialog (writable register types; server mode allows all types)
+        KeyCode::Char('w') => {
             if state.active_tab_is_writable()
                 && let Some(addr) = state.selected_addr()
             {
@@ -323,9 +323,21 @@ fn handle_write_dialog(state: &mut AppState, key: KeyEvent) {
             };
             match nf.parse_value(&input, &ws) {
                 Ok(values) => {
-                    if let Some(ref tx) = state.write_tx {
-                        let vals_display: Vec<String> =
-                            values.iter().map(|v| format!("0x{:04X}", v)).collect();
+                    let vals_display: Vec<String> =
+                        values.iter().map(|v| format!("0x{:04X}", v)).collect();
+                    if state.config.mode == Mode::Server {
+                        // Server mode: write directly to RegisterStore
+                        if let Some(ref store) = state.server_store {
+                            let reg_type = state.config.ranges[tab_index].reg_type;
+                            crate::modbus::server::write_to_store(store, reg_type, addr, &values);
+                            state.log.info(format!(
+                                "write: addr=0x{:04X} [{}] ({})",
+                                addr,
+                                input.trim(),
+                                vals_display.join(", ")
+                            ));
+                        }
+                    } else if let Some(ref tx) = state.write_tx {
                         let req = WriteRequest {
                             tab_index,
                             addr,

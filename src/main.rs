@@ -72,7 +72,8 @@ async fn main() -> Result<()> {
             modbus::client::spawn(state.clone(), write_rx);
         }
         Mode::Server => {
-            modbus::server::spawn(state.clone(), shutdown.subscribe());
+            let store = modbus::server::spawn(state.clone(), shutdown.subscribe());
+            state.lock().await.server_store = Some(store);
             // write channel unused in server mode — drop it
             drop(write_tx);
             drop(write_rx);
@@ -108,7 +109,11 @@ async fn run_loop(
     loop {
         // Draw
         {
-            let s = state.lock().await;
+            let mut s = state.lock().await;
+            // In server mode, sync RegisterStore → UI registers
+            if let Some(store) = s.server_store.clone() {
+                modbus::server::sync_store_to_registers(&store, &mut s);
+            }
             terminal.draw(|frame| render::draw(frame, &s))?;
         }
 
@@ -121,7 +126,12 @@ async fn run_loop(
             },
         };
 
-        if let Some(Event::Key(key)) = event {
+        // On Windows, crossterm emits both Press and Release events for each
+        // keystroke (macOS/Linux only emit Press). Filter to Press only so that
+        // every key handler runs exactly once on all platforms.
+        if let Some(Event::Key(key)) = event.filter(
+            |e| matches!(e, Event::Key(k) if k.kind == crossterm::event::KeyEventKind::Press),
+        ) {
             let mut s = state.lock().await;
             event::handle_key(&mut s, key);
             if !s.running {
