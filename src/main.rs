@@ -5,6 +5,9 @@ mod format;
 mod modbus;
 mod ui;
 
+pub const VERSION: &str = "0.0.3";
+pub const COPYRIGHT: &str = "(c) 2026 ForestTree";
+
 use std::io;
 use std::time::Duration;
 

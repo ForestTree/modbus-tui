@@ -4,7 +4,9 @@
       "Bash(cargo init:*)",
       "Bash(cargo build:*)",
       "Bash(cargo run:*)",
-      "Bash(cargo check:*)"
+      "Bash(cargo check:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(ls:*)"
     ]
   }
 }

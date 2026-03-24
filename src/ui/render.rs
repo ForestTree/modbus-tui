@@ -130,7 +130,7 @@ fn draw_status_bar(frame: &mut Frame, state: &AppState, area: Rect) {
     let status_line = Line::from(spans);
 
     let block = Block::default().borders(Borders::ALL).title(Span::styled(
-        " modbus-tui ",
+        format!(" modbus-tui v{} {} ", crate::VERSION, crate::COPYRIGHT),
         Style::default()
             .fg(Color::Cyan)
             .add_modifier(Modifier::BOLD),
