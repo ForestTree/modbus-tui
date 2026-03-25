@@ -433,17 +433,13 @@ fn draw_register_pane(
         } else {
             vec!["Addr", "Hex", value_header, "Timestamp", "Label"]
         };
-        let hdr = Row::new(
-            headers
-                .into_iter()
-                .map(|h| {
-                    Cell::from(h).style(
-                        Style::default()
-                            .add_modifier(Modifier::BOLD)
-                            .fg(Color::Cyan),
-                    )
-                }),
-        )
+        let hdr = Row::new(headers.into_iter().map(|h| {
+            Cell::from(h).style(
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .fg(Color::Cyan),
+            )
+        }))
         .height(1);
 
         // Collect addresses in order, then step by `width`
