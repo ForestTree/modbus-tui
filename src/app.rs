@@ -55,6 +55,8 @@ pub struct AppState {
     pub write_tx: Option<WriteTx>,
     /// Server mode: shared register store for direct reads/writes.
     pub server_store: Option<Arc<std::sync::Mutex<crate::modbus::server::RegisterStore>>>,
+    /// Client-only: rotating spinner index, incremented on each successful poll cycle.
+    pub spinner_tick: u8,
 }
 
 #[derive(Debug, Default)]
@@ -81,6 +83,7 @@ impl AppState {
             server: ServerStats::default(),
             write_tx: None,
             server_store: None,
+            spinner_tick: 0,
             config,
         }
     }

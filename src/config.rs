@@ -25,7 +25,7 @@ pub struct Cli {
     #[arg(short = 'P', long, default_value_t = 502)]
     pub port: u16,
 
-    /// Modbus slave / unit ID (0-247)
+    /// Modbus unit ID (0-247)
     #[arg(short = 'u', long, default_value_t = 1)]
     pub unit: u8,
 
@@ -64,6 +64,10 @@ pub struct Cli {
     /// Show MODBUS addresses in decimal (instead of hex) for all panes
     #[arg(short = 'D', long)]
     pub decimal_addresses: bool,
+
+    /// Hide raw Hex column — show only converted values
+    #[arg(short = 'n', long)]
+    pub no_hex: bool,
 
     /// Path to a JSON config file (overrides other flags)
     #[arg(short = 'c', long, value_name = "FILE")]
@@ -158,6 +162,9 @@ pub struct AppConfig {
     /// Word-swap multi-register floats during conversion.
     #[serde(default)]
     pub swap_floats: bool,
+    /// Hide raw Hex column — show only converted values.
+    #[serde(default)]
+    pub hide_hex: bool,
     /// Server mode: initial register values keyed by "type:address" (e.g. "hr:0": 1234).
     #[serde(default)]
     pub initial_values: HashMap<String, u16>,
@@ -253,6 +260,7 @@ impl AppConfig {
                 start_reference: sr,
                 swap_ints: cli.swap_ints,
                 swap_floats: cli.swap_floats,
+                hide_hex: cli.no_hex,
                 initial_values: HashMap::new(),
             }
         };

@@ -49,7 +49,7 @@ async fn run(state: SharedState, mut write_rx: WriteRx) {
             let mut s = state.lock().await;
             s.connection = ConnectionStatus::Connecting;
             s.log
-                .info(format!("connecting to {socket_addr} slave={}", slave.0));
+                .info(format!("connecting to {socket_addr} unit={}", slave.0));
         }
 
         let mut ctx = match tcp::connect_slave(socket_addr, slave).await {
@@ -115,6 +115,11 @@ async fn run(state: SharedState, mut write_rx: WriteRx) {
                         break;
                     }
                 }
+            }
+
+            if !had_error {
+                let mut s = state.lock().await;
+                s.spinner_tick = s.spinner_tick.wrapping_add(1);
             }
 
             if had_error {

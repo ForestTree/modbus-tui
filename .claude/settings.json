@@ -6,7 +6,8 @@
       "Bash(cargo run:*)",
       "Bash(cargo check:*)",
       "Bash(cargo clippy:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(wc:*)"
     ]
   }
 }

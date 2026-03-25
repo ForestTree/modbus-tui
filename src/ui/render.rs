@@ -98,7 +98,12 @@ fn draw_status_bar(frame: &mut Frame, state: &AppState, area: Rect) {
     ];
 
     if !is_server {
-        spans.push(sep.clone());
+        const SPINNER_CHARS: &[char] = &['|', '/', '-', '\\'];
+        let spinner = SPINNER_CHARS[(state.spinner_tick as usize) % SPINNER_CHARS.len()];
+        spans.push(Span::styled(
+            format!(" {spinner} "),
+            Style::default().fg(Color::DarkGray),
+        ));
         spans.push(Span::styled(
             format!("poll={}ms", state.config.poll_interval_ms),
             Style::default().fg(Color::DarkGray),
@@ -422,8 +427,14 @@ fn draw_register_pane(
         // Word registers: group by num_format width
         let width = nf.width();
         let value_header = nf.column_header();
+        let hide_hex = state.config.hide_hex;
+        let headers: Vec<&str> = if hide_hex {
+            vec!["Addr", value_header, "Timestamp", "Label"]
+        } else {
+            vec!["Addr", "Hex", value_header, "Timestamp", "Label"]
+        };
         let hdr = Row::new(
-            ["Addr", "Hex", value_header, "Timestamp", "Label"]
+            headers
                 .into_iter()
                 .map(|h| {
                     Cell::from(h).style(
@@ -475,6 +486,7 @@ fn draw_register_pane(
                     rv,
                     i == selected && is_active,
                     addr_fmt,
+                    hide_hex,
                 )
             })
             .collect();
@@ -488,18 +500,27 @@ fn draw_register_pane(
                 _ => 22,
             },
         };
-        let hex_width = match width {
-            1 => 8u16,
-            2 => 12,
-            _ => 22,
+        let w = if hide_hex {
+            vec![
+                Constraint::Length(8),
+                Constraint::Length(val_width),
+                Constraint::Length(23),
+                Constraint::Min(5),
+            ]
+        } else {
+            let hex_width = match width {
+                1 => 8u16,
+                2 => 12,
+                _ => 22,
+            };
+            vec![
+                Constraint::Length(8),
+                Constraint::Length(hex_width),
+                Constraint::Length(val_width),
+                Constraint::Length(23),
+                Constraint::Min(5),
+            ]
         };
-        let w = vec![
-            Constraint::Length(8),
-            Constraint::Length(hex_width),
-            Constraint::Length(val_width),
-            Constraint::Length(23),
-            Constraint::Min(5),
-        ];
         (hdr, rs, w, display_count)
     };
 
@@ -567,7 +588,7 @@ fn format_addr(addr: u16, fmt: crate::app::AddrFormat) -> String {
     }
 }
 
-/// Row for word registers: Addr, Hex, Value (formatted), Timestamp, Label
+/// Row for word registers: Addr, [Hex], Value (formatted), Timestamp, Label
 fn build_word_row<'a>(
     addr: u16,
     hex_str: &str,
@@ -575,6 +596,7 @@ fn build_word_row<'a>(
     rv: &RegisterValue,
     is_selected: bool,
     addr_format: crate::app::AddrFormat,
+    hide_hex: bool,
 ) -> Row<'a> {
     let (base, value_style, cc) = styles_for_row(rv, is_selected);
 
@@ -585,13 +607,15 @@ fn build_word_row<'a>(
         Cell::from(addr_str).style(base)
     };
 
-    Row::new(vec![
-        addr_cell,
-        Cell::from(hex_str.to_string()).style(value_style),
-        Cell::from(value_str.to_string()).style(value_style),
-        Cell::from(rv.changed_wall.clone()).style(value_style),
-        Cell::from(rv.label.as_deref().unwrap_or("").to_string()).style(base),
-    ])
+    let mut cells = vec![addr_cell];
+    if !hide_hex {
+        cells.push(Cell::from(hex_str.to_string()).style(value_style));
+    }
+    cells.push(Cell::from(value_str.to_string()).style(value_style));
+    cells.push(Cell::from(rv.changed_wall.clone()).style(value_style));
+    cells.push(Cell::from(rv.label.as_deref().unwrap_or("").to_string()).style(base));
+
+    Row::new(cells)
 }
 
 /// Row for coils / discrete inputs: Addr, Value (ON/OFF), Timestamp, Label

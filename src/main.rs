@@ -5,7 +5,7 @@ mod format;
 mod modbus;
 mod ui;
 
-pub const VERSION: &str = "0.0.3";
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const COPYRIGHT: &str = "(c) 2026 ForestTree";
 
 use std::io;
