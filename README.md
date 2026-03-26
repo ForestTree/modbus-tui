@@ -19,6 +19,18 @@ A terminal-based Modbus TCP client and server for inspecting, monitoring, and te
 - **Export** — export current register values to JSON
 - **Cross-platform** — runs on Linux, macOS, and Windows
 
+## Platform Support
+
+modbus-tui runs natively on all major platforms:
+
+| Platform | Architecture |
+|----------|-------------|
+| Linux | x86_64 (musl) |
+| macOS | x86_64, ARM (Apple Silicon) |
+| Windows | x86_64 |
+
+Pre-built binaries for all platforms are available on the [Releases](https://github.com/ForestTree/modbus-tui/releases) page.
+
 ## Installation
 
 ```sh
