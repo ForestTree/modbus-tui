@@ -174,6 +174,9 @@ pub struct RegisterValue {
     pub changed_at: Option<Instant>,
     pub prev_raw: Option<u16>,
     pub changed_wall: String,
+    /// Set when the value stops changing (first poll that reads the same value).
+    /// While `None`, the value is actively changing and stays highlighted.
+    pub stable_since: Option<Instant>,
 }
 
 impl RegisterValue {
@@ -185,6 +188,7 @@ impl RegisterValue {
             changed_at: None,
             prev_raw: None,
             changed_wall: Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+            stable_since: None,
         }
     }
 
@@ -193,15 +197,25 @@ impl RegisterValue {
             self.prev_raw = Some(self.raw);
             self.changed_at = Some(Instant::now());
             self.changed_wall = Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
+            self.stable_since = None;
+        } else if self.changed_at.is_some() && self.stable_since.is_none() {
+            // Value was changing but now reads the same — start fade-out timer
+            self.stable_since = Some(Instant::now());
         }
         self.raw = raw;
         self.last_read = Instant::now();
     }
 
     pub fn recently_changed(&self) -> bool {
-        self.changed_at
-            .map(|t| t.elapsed().as_secs() < CHANGE_HIGHLIGHT_SECS)
-            .unwrap_or(false)
+        match self.changed_at {
+            None => false,
+            Some(_) => match self.stable_since {
+                // Still actively changing — always highlighted
+                None => true,
+                // Stable — fade out after CHANGE_HIGHLIGHT_SECS
+                Some(t) => t.elapsed().as_secs() < CHANGE_HIGHLIGHT_SECS,
+            },
+        }
     }
 }
 

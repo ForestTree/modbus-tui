@@ -5,8 +5,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Cell, Clear, List, ListItem, Paragraph, Row, Table};
 
 use crate::app::{
-    AppState, CHANGE_HIGHLIGHT_SECS, ConnectionStatus, FocusPane, InputMode, LogLevel,
-    RegisterValue, ServerStats,
+    AppState, ConnectionStatus, FocusPane, InputMode, LogLevel, RegisterValue, ServerStats,
 };
 use crate::config::Mode;
 use crate::format::NumFormat;
@@ -444,7 +443,7 @@ fn draw_register_pane(
 
         // Collect addresses in order, then step by `width`
         let addrs: Vec<u16> = regs.keys().copied().collect();
-        let grouped: Vec<(u16, Vec<u16>)> = addrs
+        let grouped: Vec<(u16, Vec<u16>, Vec<u16>)> = addrs
             .chunks(width)
             .map(|chunk| {
                 let base = chunk[0];
@@ -452,7 +451,7 @@ fn draw_register_pane(
                     .iter()
                     .map(|a| regs.get(a).map(|rv| rv.raw).unwrap_or(0))
                     .collect();
-                (base, vals)
+                (base, vals, chunk.to_vec())
             })
             .collect();
 
@@ -463,8 +462,21 @@ fn draw_register_pane(
         let rs: Vec<Row> = grouped
             .iter()
             .enumerate()
-            .map(|(i, (base_addr, vals))| {
-                let rv = regs.get(base_addr).unwrap();
+            .map(|(i, (base_addr, vals, chunk_addrs))| {
+                let base_rv = regs.get(base_addr).unwrap();
+                // For multi-register values, find the most recently changed
+                // register in the group so the row highlights when ANY
+                // sub-register changes.
+                let rv = if width > 1 {
+                    chunk_addrs
+                        .iter()
+                        .filter_map(|a| regs.get(a))
+                        .filter(|r| r.recently_changed())
+                        .max_by_key(|r| r.changed_at)
+                        .unwrap_or(base_rv)
+                } else {
+                    base_rv
+                };
                 let hex_str = vals
                     .iter()
                     .map(|v| format!("{:04X}", v))
@@ -480,6 +492,7 @@ fn draw_register_pane(
                     &hex_str,
                     &value_str,
                     rv,
+                    base_rv.label.as_deref(),
                     i == selected && is_active,
                     addr_fmt,
                     hide_hex,
@@ -541,21 +554,12 @@ fn draw_register_pane(
 }
 
 /// Compute change-highlight color from a RegisterValue.
+/// Values that are actively changing stay at full brightness Yellow.
 fn change_color(rv: &RegisterValue) -> Color {
     if !rv.recently_changed() {
         return Color::Reset;
     }
-    let elapsed = rv
-        .changed_at
-        .map(|t| t.elapsed().as_millis())
-        .unwrap_or(u128::MAX);
-    if elapsed < (CHANGE_HIGHLIGHT_SECS as u128 * 1000 / 3) {
-        Color::Yellow
-    } else if elapsed < (CHANGE_HIGHLIGHT_SECS as u128 * 1000 * 2 / 3) {
-        Color::Rgb(180, 180, 0)
-    } else {
-        Color::Rgb(120, 120, 0)
-    }
+    Color::Yellow
 }
 
 fn styles_for_row(rv: &RegisterValue, is_selected: bool) -> (Style, Style, Color) {
@@ -585,11 +589,13 @@ fn format_addr(addr: u16, fmt: crate::app::AddrFormat) -> String {
 }
 
 /// Row for word registers: Addr, [Hex], Value (formatted), Timestamp, Label
+#[allow(clippy::too_many_arguments)]
 fn build_word_row<'a>(
     addr: u16,
     hex_str: &str,
     value_str: &str,
     rv: &RegisterValue,
+    label: Option<&str>,
     is_selected: bool,
     addr_format: crate::app::AddrFormat,
     hide_hex: bool,
@@ -609,7 +615,7 @@ fn build_word_row<'a>(
     }
     cells.push(Cell::from(value_str.to_string()).style(value_style));
     cells.push(Cell::from(rv.changed_wall.clone()).style(value_style));
-    cells.push(Cell::from(rv.label.as_deref().unwrap_or("").to_string()).style(base));
+    cells.push(Cell::from(label.unwrap_or("").to_string()).style(base));
 
     Row::new(cells)
 }
