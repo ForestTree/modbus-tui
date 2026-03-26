@@ -444,6 +444,19 @@ fn execute_command(state: &mut AppState, cmd: &str) {
                 }
             }
         }
+        "save" => {
+            let path = if parts.len() > 1 {
+                let p = parts[1];
+                if p.ends_with(".json") {
+                    p.to_string()
+                } else {
+                    format!("{p}.json")
+                }
+            } else {
+                "config.json".to_string()
+            };
+            save_config(state, &path);
+        }
         "export" => {
             let path = if parts.len() > 1 {
                 let p = parts[1];
@@ -567,5 +580,46 @@ fn export_registers(state: &mut AppState, path: &str) {
             Err(e) => state.log.error(format!("export failed: {e}")),
         },
         Err(e) => state.log.error(format!("export serialization failed: {e}")),
+    }
+}
+
+fn save_config(state: &mut AppState, path: &str) {
+    use std::collections::BTreeMap;
+
+    let mut config = state.config.clone();
+
+    // Capture current per-pane settings into config
+    for (i, pane) in state.ui.panes.iter().enumerate() {
+        if let Some(range) = config.ranges.get_mut(i) {
+            // Save current numeric format
+            if !range.reg_type.is_coil_type() {
+                range.initial_format = Some(pane.num_format);
+            }
+            // Collect labels from live registers
+            let mut labels = BTreeMap::new();
+            if let Some(regs) = state.registers.get(i) {
+                for (&addr, rv) in regs {
+                    if let Some(label) = &rv.label {
+                        labels.insert(addr, label.clone());
+                    }
+                }
+            }
+            range.labels = labels;
+        }
+    }
+
+    // Capture decimal_addresses: true if all panes use decimal
+    config.decimal_addresses = state
+        .ui
+        .panes
+        .iter()
+        .all(|p| p.addr_format == AddrFormat::Decimal);
+
+    match serde_json::to_string_pretty(&config) {
+        Ok(json) => match std::fs::write(path, &json) {
+            Ok(()) => state.log.info(format!("config saved to {path}")),
+            Err(e) => state.log.error(format!("save failed: {e}")),
+        },
+        Err(e) => state.log.error(format!("save serialization failed: {e}")),
     }
 }

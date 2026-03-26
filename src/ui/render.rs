@@ -979,6 +979,7 @@ fn draw_help_dialog(frame: &mut Frame) {
         Line::from(Span::styled("  Commands (via :)", section_style)),
         help(":poll <ms>", "Change poll interval"),
         help(":export [path]", "Export registers to JSON"),
+        help(":save [path]", "Save current config for -c option"),
         Line::from(""),
         Line::from(Span::styled(
             "  Press any key to close",

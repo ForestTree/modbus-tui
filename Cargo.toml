@@ -1,6 +1,6 @@
 [package]
 name = "modbus-tui"
-version = "0.0.5"
+version = "0.0.6"
 authors = ["ForestTree <michalec.miroslav@gmail.com>"]
 repository = "https://github.com/ForestTree/modbus-tui"
 edition = "2024"

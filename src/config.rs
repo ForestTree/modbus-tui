@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -74,9 +74,10 @@ pub struct Cli {
     pub config: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, ValueEnum, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
+    #[default]
     Client,
     Server,
 }
@@ -123,6 +124,9 @@ pub struct PollRange {
     /// Optional initial numeric format for the pane (word registers only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initial_format: Option<crate::format::NumFormat>,
+    /// Per-register labels keyed by protocol address.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub labels: BTreeMap<u16, String>,
 }
 
 impl PollRange {
@@ -142,15 +146,34 @@ impl PollRange {
 // Validated application config
 // ---------------------------------------------------------------------------
 
+fn default_host() -> String {
+    "127.0.0.1".to_string()
+}
+fn default_port() -> u16 {
+    502
+}
+fn default_unit() -> u8 {
+    1
+}
+fn default_poll_interval() -> u64 {
+    100
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
+    #[serde(default)]
     pub mode: Mode,
+    #[serde(default = "default_host")]
     pub host: String,
+    #[serde(default = "default_port")]
     pub port: u16,
+    #[serde(default = "default_unit")]
     pub unit: u8,
     /// Ordered list of register ranges to poll / display as tabs.
     /// `start` is always the protocol address (0-based).
+    #[serde(default)]
     pub ranges: Vec<PollRange>,
+    #[serde(default = "default_poll_interval")]
     pub poll_interval_ms: u64,
     /// 0 = zero-based addressing, 1 = one-based MODBUS addressing.
     /// User-facing addresses = protocol address + start_reference.
@@ -165,6 +188,9 @@ pub struct AppConfig {
     /// Hide raw Hex column — show only converted values.
     #[serde(default)]
     pub hide_hex: bool,
+    /// Show MODBUS addresses in decimal (instead of hex) for all panes.
+    #[serde(default)]
+    pub decimal_addresses: bool,
     /// Server mode: initial register values keyed by "type:address" (e.g. "hr:0": 1234).
     #[serde(default)]
     pub initial_values: HashMap<String, u16>,
@@ -176,8 +202,28 @@ pub struct AppConfig {
 
 impl AppConfig {
     pub fn from_cli(cli: &Cli) -> Result<Self> {
+        let matches = <Cli as clap::CommandFactory>::command().get_matches();
+
         let mut cfg = if let Some(ref path) = cli.config {
-            Self::load(path)?
+            let mut c = Self::load(path)?;
+            // CLI args override config file values when explicitly provided
+            if matches.value_source("host") == Some(clap::parser::ValueSource::CommandLine) {
+                c.host = cli.host.clone();
+            }
+            if matches.value_source("port") == Some(clap::parser::ValueSource::CommandLine) {
+                c.port = cli.port;
+            }
+            if matches.value_source("unit") == Some(clap::parser::ValueSource::CommandLine) {
+                c.unit = cli.unit;
+            }
+            if matches.value_source("mode") == Some(clap::parser::ValueSource::CommandLine) {
+                c.mode = cli.mode;
+            }
+            if matches.value_source("poll_interval") == Some(clap::parser::ValueSource::CommandLine)
+            {
+                c.poll_interval_ms = cli.poll_interval;
+            }
+            c
         } else {
             let sr = cli.start_reference;
 
@@ -201,6 +247,7 @@ impl AppConfig {
                                 start,
                                 count,
                                 initial_format: None,
+                                labels: BTreeMap::new(),
                             });
                             co_idx += 1;
                         }
@@ -214,6 +261,7 @@ impl AppConfig {
                                 start,
                                 count,
                                 initial_format: None,
+                                labels: BTreeMap::new(),
                             });
                             di_idx += 1;
                         }
@@ -228,6 +276,7 @@ impl AppConfig {
                                 start,
                                 count,
                                 initial_format: fmt,
+                                labels: BTreeMap::new(),
                             });
                             hr_idx += 1;
                         }
@@ -242,6 +291,7 @@ impl AppConfig {
                                 start,
                                 count,
                                 initial_format: fmt,
+                                labels: BTreeMap::new(),
                             });
                             ir_idx += 1;
                         }
@@ -261,6 +311,7 @@ impl AppConfig {
                 swap_ints: cli.swap_ints,
                 swap_floats: cli.swap_floats,
                 hide_hex: cli.no_hex,
+                decimal_addresses: cli.decimal_addresses,
                 initial_values: HashMap::new(),
             }
         };
