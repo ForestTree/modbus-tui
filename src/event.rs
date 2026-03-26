@@ -446,11 +446,16 @@ fn execute_command(state: &mut AppState, cmd: &str) {
         }
         "export" => {
             let path = if parts.len() > 1 {
-                parts[1]
+                let p = parts[1];
+                if p.ends_with(".json") {
+                    p.to_string()
+                } else {
+                    format!("{p}.json")
+                }
             } else {
-                "registers.json"
+                "registers.json".to_string()
             };
-            export_registers(state, path);
+            export_registers(state, &path);
         }
         _ => {
             state.log.warn(format!("unknown command: {}", parts[0]));
@@ -459,30 +464,104 @@ fn execute_command(state: &mut AppState, cmd: &str) {
 }
 
 fn export_registers(state: &mut AppState, path: &str) {
-    use std::collections::BTreeMap;
+    let sr = state.config.start_reference;
+    let ws = crate::format::WordSwap {
+        ints: state.config.swap_ints,
+        floats: state.config.swap_floats,
+    };
 
-    let mut out: BTreeMap<String, BTreeMap<String, u16>> = BTreeMap::new();
+    let mut sections = Vec::new();
 
     for (i, range) in state.config.ranges.iter().enumerate() {
         let regs = &state.registers[i];
         if regs.is_empty() {
             continue;
         }
-        let fmt = state
-            .ui
-            .panes
-            .get(i)
-            .map(|p| p.addr_format)
-            .unwrap_or_default();
-        let section = range.tab_label(state.config.start_reference, fmt);
-        let m: BTreeMap<String, u16> = regs
-            .iter()
-            .map(|(addr, rv)| (format!("0x{:04X}", addr), rv.raw))
-            .collect();
-        out.insert(section, m);
+        let pane = state.ui.panes.get(i);
+        let addr_fmt = pane.map(|p| p.addr_format).unwrap_or_default();
+        let nf = pane.map(|p| p.num_format).unwrap_or_default();
+        let section_name = range.tab_label(sr, addr_fmt);
+        let is_coils = range.reg_type.is_coil_type();
+
+        let format_addr = |addr: u16| -> String {
+            match addr_fmt {
+                AddrFormat::Hex => format!("0x{:04X}", addr),
+                AddrFormat::Decimal => format!("{}", addr),
+            }
+        };
+
+        let mut rows = Vec::new();
+
+        if is_coils {
+            for (&addr, rv) in regs.iter() {
+                let mut entry = serde_json::Map::new();
+                entry.insert(
+                    "address".into(),
+                    serde_json::Value::String(format_addr(addr + sr)),
+                );
+                entry.insert(
+                    "value".into(),
+                    serde_json::Value::String(if rv.raw != 0 { "ON" } else { "OFF" }.into()),
+                );
+                entry.insert(
+                    "timestamp".into(),
+                    serde_json::Value::String(rv.changed_wall.clone()),
+                );
+                if let Some(label) = &rv.label {
+                    entry.insert("label".into(), serde_json::Value::String(label.clone()));
+                }
+                rows.push(serde_json::Value::Object(entry));
+            }
+        } else {
+            let width = nf.width();
+            let addrs: Vec<u16> = regs.keys().copied().collect();
+            for chunk in addrs.chunks(width) {
+                let base_addr = chunk[0];
+                let vals: Vec<u16> = chunk
+                    .iter()
+                    .map(|a| regs.get(a).map(|rv| rv.raw).unwrap_or(0))
+                    .collect();
+
+                let base_rv = regs.get(&base_addr).unwrap();
+                let hex_str = vals
+                    .iter()
+                    .map(|v| format!("{:04X}", v))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let value_str = nf.format_value(&vals, &ws);
+
+                let mut entry = serde_json::Map::new();
+                entry.insert(
+                    "address".into(),
+                    serde_json::Value::String(format_addr(base_addr + sr)),
+                );
+                entry.insert("hex".into(), serde_json::Value::String(hex_str));
+                entry.insert("value".into(), serde_json::Value::String(value_str));
+                entry.insert(
+                    "timestamp".into(),
+                    serde_json::Value::String(base_rv.changed_wall.clone()),
+                );
+                if let Some(label) = &base_rv.label {
+                    entry.insert("label".into(), serde_json::Value::String(label.clone()));
+                }
+                rows.push(serde_json::Value::Object(entry));
+            }
+        }
+
+        let mut section = serde_json::Map::new();
+        if !is_coils {
+            section.insert(
+                "format".into(),
+                serde_json::Value::String(nf.column_header().into()),
+            );
+        }
+        section.insert("registers".into(), serde_json::Value::Array(rows));
+        sections.push((section_name, serde_json::Value::Object(section)));
     }
 
-    match serde_json::to_string_pretty(&out) {
+    // Use ordered map to preserve pane order
+    let out: serde_json::Map<String, serde_json::Value> = sections.into_iter().collect();
+    match serde_json::to_string_pretty(&serde_json::Value::Object(out)) {
         Ok(json) => match std::fs::write(path, &json) {
             Ok(()) => state.log.info(format!("exported registers to {path}")),
             Err(e) => state.log.error(format!("export failed: {e}")),
