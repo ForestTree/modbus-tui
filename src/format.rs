@@ -1,10 +1,13 @@
 use std::fmt;
 
-/// Word-swap configuration for multi-register conversions.
+/// Byte/word-swap configuration for register conversions.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct WordSwap {
     pub ints: bool,
     pub floats: bool,
+    /// Byte-swap: reverse bytes within each u16 register (0xABCD → 0xCDAB).
+    /// Applied to all register types (1, 2, and 4-register values).
+    pub bytes: bool,
 }
 
 /// Numeric interpretation format for register values.
@@ -97,19 +100,25 @@ impl NumFormat {
     }
 
     /// Convert a slice of registers to a display string.
-    /// If `swap` config applies, word order is reversed before conversion.
+    /// If byte-swap is active, bytes within each register are swapped first.
+    /// If word-swap applies, word order is then reversed before conversion.
     pub fn format_value(self, regs: &[u16], ws: &WordSwap) -> String {
         if regs.len() < self.width() {
             return "?".to_string();
         }
-        // Apply word swap if configured for this format type
-        let r: Vec<u16> = if self.should_swap(ws) {
-            let mut v = regs[..self.width()].to_vec();
-            v.reverse();
-            v
+        // 1. Byte-swap each register if configured
+        let mut r: Vec<u16> = if ws.bytes {
+            regs[..self.width()]
+                .iter()
+                .map(|&v| v.swap_bytes())
+                .collect()
         } else {
             regs[..self.width()].to_vec()
         };
+        // 2. Word-swap (reverse register order) if configured for this format type
+        if self.should_swap(ws) {
+            r.reverse();
+        }
         match self {
             Self::Int16 => format!("{}", r[0] as i16),
             Self::Uint16 => format!("{}", r[0]),
@@ -195,6 +204,12 @@ impl NumFormat {
         if self.should_swap(ws) {
             regs.reverse();
         }
+        // Byte-swap each register for write if configured
+        if ws.bytes {
+            for reg in &mut regs {
+                *reg = reg.swap_bytes();
+            }
+        }
         Ok(regs)
     }
 }
@@ -276,7 +291,7 @@ fn split_u64(v: u64) -> Vec<u16> {
 // f32 → IEEE 754 half-precision (float16) conversion
 // ---------------------------------------------------------------------------
 
-fn f32_to_f16(val: f32) -> u16 {
+pub(crate) fn f32_to_f16(val: f32) -> u16 {
     let bits = val.to_bits();
     let sign = ((bits >> 16) & 0x8000) as u16;
     let exp = ((bits >> 23) & 0xff) as i32;
@@ -326,7 +341,7 @@ fn combine_u64(w0: u16, w1: u16, w2: u16, w3: u16) -> u64 {
 // IEEE 754 half-precision (float16) → f32 conversion
 // ---------------------------------------------------------------------------
 
-fn f16_to_f32(bits: u16) -> f32 {
+pub(crate) fn f16_to_f32(bits: u16) -> f32 {
     let sign = ((bits >> 15) & 1) as u32;
     let exp = ((bits >> 10) & 0x1f) as u32;
     let frac = (bits & 0x3ff) as u32;
@@ -359,5 +374,792 @@ fn f16_to_f32(bits: u16) -> f32 {
         // Normal: rebias exponent from 15-bias to 127-bias
         let new_exp = exp + 112;
         f32::from_bits((sign << 31) | (new_exp << 23) | (frac << 13))
+    }
+}
+
+// ===========================================================================
+// Tests
+// ===========================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const NO_SWAP: WordSwap = WordSwap {
+        ints: false,
+        floats: false,
+        bytes: false,
+    };
+    const BYTE_SWAP: WordSwap = WordSwap {
+        ints: false,
+        floats: false,
+        bytes: true,
+    };
+    const WORD_SWAP_INTS: WordSwap = WordSwap {
+        ints: true,
+        floats: false,
+        bytes: false,
+    };
+    const WORD_SWAP_FLOATS: WordSwap = WordSwap {
+        ints: false,
+        floats: true,
+        bytes: false,
+    };
+    const WORD_SWAP_ALL: WordSwap = WordSwap {
+        ints: true,
+        floats: true,
+        bytes: false,
+    };
+    const BYTE_AND_WORD_INTS: WordSwap = WordSwap {
+        ints: true,
+        floats: false,
+        bytes: true,
+    };
+    const BYTE_AND_WORD_FLOATS: WordSwap = WordSwap {
+        ints: false,
+        floats: true,
+        bytes: true,
+    };
+    const BYTE_AND_WORD_ALL: WordSwap = WordSwap {
+        ints: true,
+        floats: true,
+        bytes: true,
+    };
+
+    // -----------------------------------------------------------------------
+    // Helper: round-trip from wire registers through format then parse
+    // -----------------------------------------------------------------------
+
+    /// Verify that format_value → parse_value returns the original wire registers.
+    fn assert_roundtrip(nf: NumFormat, regs: &[u16], ws: &WordSwap) {
+        let display = nf.format_value(regs, ws);
+        assert_ne!(display, "?", "format_value returned '?' for {:?}", nf);
+        let parsed = nf.parse_value(&display, ws).unwrap_or_else(|e| {
+            panic!("parse_value failed for {:?} input='{}': {}", nf, display, e)
+        });
+        assert_eq!(
+            &parsed,
+            &regs[..nf.width()],
+            "round-trip failed for {:?} ws={:?}\n  wire_regs={:?}\n  display='{}'\n  parsed={:?}",
+            nf,
+            ws,
+            &regs[..nf.width()],
+            display,
+            parsed
+        );
+    }
+
+    /// Verify parse → format → parse produces the same wire registers.
+    /// Useful for float types where arbitrary registers may not survive display.
+    fn assert_value_roundtrip(nf: NumFormat, value: &str, ws: &WordSwap) {
+        let wire = nf
+            .parse_value(value, ws)
+            .unwrap_or_else(|e| panic!("parse_value failed for {:?} input='{}': {}", nf, value, e));
+        let display = nf.format_value(&wire, ws);
+        let wire2 = nf.parse_value(&display, ws).unwrap_or_else(|e| {
+            panic!("re-parse failed for {:?} display='{}': {}", nf, display, e)
+        });
+        assert_eq!(
+            wire, wire2,
+            "value roundtrip failed for {:?} ws={:?}\n  input='{}'\n  wire={:?}\n  display='{}'\n  wire2={:?}",
+            nf, ws, value, wire, display, wire2
+        );
+    }
+
+    // =======================================================================
+    // 1. Baseline: no swap — verify format_value for all types
+    // =======================================================================
+
+    #[test]
+    fn format_uint16_no_swap() {
+        assert_eq!(NumFormat::Uint16.format_value(&[258], &NO_SWAP), "258");
+        assert_eq!(NumFormat::Uint16.format_value(&[0], &NO_SWAP), "0");
+        assert_eq!(NumFormat::Uint16.format_value(&[65535], &NO_SWAP), "65535");
+    }
+
+    #[test]
+    fn format_int16_no_swap() {
+        assert_eq!(NumFormat::Int16.format_value(&[0], &NO_SWAP), "0");
+        assert_eq!(NumFormat::Int16.format_value(&[32767], &NO_SWAP), "32767");
+        // 0xFFFF = -1 as i16
+        assert_eq!(NumFormat::Int16.format_value(&[0xFFFF], &NO_SWAP), "-1");
+        // 0x8000 = -32768
+        assert_eq!(NumFormat::Int16.format_value(&[0x8000], &NO_SWAP), "-32768");
+    }
+
+    #[test]
+    fn format_bin16_no_swap() {
+        assert_eq!(
+            NumFormat::Bin16.format_value(&[0b1010_0000_0000_0101], &NO_SWAP),
+            "1010000000000101"
+        );
+        assert_eq!(
+            NumFormat::Bin16.format_value(&[0], &NO_SWAP),
+            "0000000000000000"
+        );
+    }
+
+    #[test]
+    fn format_uint32_no_swap() {
+        // 0x00010002 = 65538, regs = [0x0001, 0x0002]
+        assert_eq!(
+            NumFormat::Uint32.format_value(&[0x0001, 0x0002], &NO_SWAP),
+            "65538"
+        );
+    }
+
+    #[test]
+    fn format_int32_no_swap() {
+        // -1 as i32 = 0xFFFFFFFF, regs = [0xFFFF, 0xFFFF]
+        assert_eq!(
+            NumFormat::Int32.format_value(&[0xFFFF, 0xFFFF], &NO_SWAP),
+            "-1"
+        );
+    }
+
+    #[test]
+    fn format_float32_no_swap() {
+        // 1.0f32 = 0x3F800000, regs = [0x3F80, 0x0000]
+        assert_eq!(
+            NumFormat::Float32.format_value(&[0x3F80, 0x0000], &NO_SWAP),
+            "1.000000"
+        );
+    }
+
+    #[test]
+    fn format_uint64_no_swap() {
+        // 1 as u64 = 0x0000000000000001, regs = [0, 0, 0, 1]
+        assert_eq!(NumFormat::Uint64.format_value(&[0, 0, 0, 1], &NO_SWAP), "1");
+    }
+
+    #[test]
+    fn format_int64_no_swap() {
+        // -1 as i64 = all-ones
+        assert_eq!(
+            NumFormat::Int64.format_value(&[0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF], &NO_SWAP),
+            "-1"
+        );
+    }
+
+    #[test]
+    fn format_float64_no_swap() {
+        // 1.0f64 = 0x3FF0000000000000, regs = [0x3FF0, 0x0000, 0x0000, 0x0000]
+        assert_eq!(
+            NumFormat::Float64.format_value(&[0x3FF0, 0x0000, 0x0000, 0x0000], &NO_SWAP),
+            "1.0000000000"
+        );
+    }
+
+    #[test]
+    fn format_float16_no_swap() {
+        // f16 1.0 = 0x3C00
+        let result = NumFormat::Float16.format_value(&[0x3C00], &NO_SWAP);
+        assert_eq!(result, "1.0000");
+    }
+
+    // =======================================================================
+    // 2. Byte-swap — verify byte swap effect on all register widths
+    // =======================================================================
+
+    #[test]
+    fn byte_swap_uint16() {
+        // 0x0102 → byte-swapped → 0x0201 = 513
+        assert_eq!(NumFormat::Uint16.format_value(&[0x0102], &BYTE_SWAP), "513");
+    }
+
+    #[test]
+    fn byte_swap_int16() {
+        // 0x00FF → byte-swapped → 0xFF00 = -256 as i16
+        assert_eq!(NumFormat::Int16.format_value(&[0x00FF], &BYTE_SWAP), "-256");
+    }
+
+    #[test]
+    fn byte_swap_bin16() {
+        // 0x0102 = 0000_0001_0000_0010 → byte-swapped → 0x0201 = 0000_0010_0000_0001
+        assert_eq!(
+            NumFormat::Bin16.format_value(&[0x0102], &BYTE_SWAP),
+            "0000001000000001"
+        );
+    }
+
+    #[test]
+    fn byte_swap_float16() {
+        // f16 1.0 = 0x3C00 → byte-swapped → 0x003C
+        // 0x003C is a subnormal f16 — different from 1.0
+        let no_swap = NumFormat::Float16.format_value(&[0x3C00], &NO_SWAP);
+        let swapped = NumFormat::Float16.format_value(&[0x3C00], &BYTE_SWAP);
+        assert_ne!(
+            no_swap, swapped,
+            "byte swap should change Float16 interpretation"
+        );
+        assert_eq!(no_swap, "1.0000");
+    }
+
+    #[test]
+    fn byte_swap_uint32() {
+        // regs [0x0102, 0x0304] → byte-swapped → [0x0201, 0x0403]
+        // combine_u32(0x0201, 0x0403) = 0x02010403 = 33620995
+        assert_eq!(
+            NumFormat::Uint32.format_value(&[0x0102, 0x0304], &BYTE_SWAP),
+            "33620995"
+        );
+        // Without swap: combine_u32(0x0102, 0x0304) = 0x01020304 = 16909060
+        assert_eq!(
+            NumFormat::Uint32.format_value(&[0x0102, 0x0304], &NO_SWAP),
+            "16909060"
+        );
+    }
+
+    #[test]
+    fn byte_swap_int32() {
+        // regs [0x0001, 0x0000] → no swap → 0x00010000 = 65536
+        // byte-swapped → [0x0100, 0x0000] → 0x01000000 = 16777216
+        assert_eq!(
+            NumFormat::Int32.format_value(&[0x0001, 0x0000], &BYTE_SWAP),
+            "16777216"
+        );
+    }
+
+    #[test]
+    fn byte_swap_float32() {
+        // 1.0f32 = 0x3F800000 → regs = [0x3F80, 0x0000]
+        // byte-swapped → [0x803F, 0x0000] → 0x803F0000 ≠ 1.0
+        let no_swap = NumFormat::Float32.format_value(&[0x3F80, 0x0000], &NO_SWAP);
+        let swapped = NumFormat::Float32.format_value(&[0x3F80, 0x0000], &BYTE_SWAP);
+        assert_eq!(no_swap, "1.000000");
+        assert_ne!(
+            swapped, "1.000000",
+            "byte swap should change f32 interpretation"
+        );
+    }
+
+    #[test]
+    fn byte_swap_uint64() {
+        // regs [0x0001, 0x0000, 0x0000, 0x0000] → no swap → 1 << 48
+        // byte-swapped → [0x0100, 0x0000, 0x0000, 0x0000] → 0x01000000_00000000
+        assert_eq!(
+            NumFormat::Uint64.format_value(&[0x0001, 0x0000, 0x0000, 0x0000], &NO_SWAP),
+            "281474976710656" // 0x0001_0000_0000_0000
+        );
+        assert_eq!(
+            NumFormat::Uint64.format_value(&[0x0001, 0x0000, 0x0000, 0x0000], &BYTE_SWAP),
+            "72057594037927936" // 0x0100_0000_0000_0000
+        );
+    }
+
+    #[test]
+    fn byte_swap_int64() {
+        let no_swap = NumFormat::Int64.format_value(&[0x0001, 0x0000, 0x0000, 0x0000], &NO_SWAP);
+        let swapped = NumFormat::Int64.format_value(&[0x0001, 0x0000, 0x0000, 0x0000], &BYTE_SWAP);
+        assert_ne!(
+            no_swap, swapped,
+            "byte swap should change i64 interpretation"
+        );
+    }
+
+    #[test]
+    fn byte_swap_float64() {
+        let no_swap = NumFormat::Float64.format_value(&[0x3FF0, 0x0000, 0x0000, 0x0000], &NO_SWAP);
+        let swapped =
+            NumFormat::Float64.format_value(&[0x3FF0, 0x0000, 0x0000, 0x0000], &BYTE_SWAP);
+        assert_eq!(no_swap, "1.0000000000");
+        assert_ne!(swapped, "1.0000000000");
+    }
+
+    // =======================================================================
+    // 3. Word-swap — verify it only applies to multi-register types
+    // =======================================================================
+
+    #[test]
+    fn word_swap_does_not_affect_single_reg() {
+        // Word swap should have no effect on 1-register formats
+        assert_eq!(
+            NumFormat::Uint16.format_value(&[0x0102], &WORD_SWAP_INTS),
+            NumFormat::Uint16.format_value(&[0x0102], &NO_SWAP)
+        );
+        assert_eq!(
+            NumFormat::Int16.format_value(&[0x0102], &WORD_SWAP_INTS),
+            NumFormat::Int16.format_value(&[0x0102], &NO_SWAP)
+        );
+        assert_eq!(
+            NumFormat::Bin16.format_value(&[0x0102], &WORD_SWAP_INTS),
+            NumFormat::Bin16.format_value(&[0x0102], &NO_SWAP)
+        );
+        assert_eq!(
+            NumFormat::Float16.format_value(&[0x3C00], &WORD_SWAP_FLOATS),
+            NumFormat::Float16.format_value(&[0x3C00], &NO_SWAP)
+        );
+    }
+
+    #[test]
+    fn word_swap_uint32() {
+        // [0x0001, 0x0002] → reversed → [0x0002, 0x0001] → 0x00020001 = 131073
+        assert_eq!(
+            NumFormat::Uint32.format_value(&[0x0001, 0x0002], &WORD_SWAP_INTS),
+            "131073"
+        );
+        // Without swap: 0x00010002 = 65538
+        assert_eq!(
+            NumFormat::Uint32.format_value(&[0x0001, 0x0002], &NO_SWAP),
+            "65538"
+        );
+    }
+
+    #[test]
+    fn word_swap_float32() {
+        // 1.0 = 0x3F800000 → regs [0x3F80, 0x0000]
+        // word swapped → [0x0000, 0x3F80] → 0x00003F80 → not 1.0
+        let swapped = NumFormat::Float32.format_value(&[0x3F80, 0x0000], &WORD_SWAP_FLOATS);
+        assert_ne!(swapped, "1.000000");
+    }
+
+    #[test]
+    fn word_swap_ints_does_not_affect_floats() {
+        // swap_ints should NOT swap float formats
+        assert_eq!(
+            NumFormat::Float32.format_value(&[0x3F80, 0x0000], &WORD_SWAP_INTS),
+            NumFormat::Float32.format_value(&[0x3F80, 0x0000], &NO_SWAP)
+        );
+    }
+
+    #[test]
+    fn word_swap_floats_does_not_affect_ints() {
+        assert_eq!(
+            NumFormat::Uint32.format_value(&[0x0001, 0x0002], &WORD_SWAP_FLOATS),
+            NumFormat::Uint32.format_value(&[0x0001, 0x0002], &NO_SWAP)
+        );
+    }
+
+    // =======================================================================
+    // 4. Combined byte + word swap
+    // =======================================================================
+
+    #[test]
+    fn byte_and_word_swap_uint32() {
+        // regs [0x0102, 0x0304]
+        // Step 1 (byte swap): [0x0201, 0x0403]
+        // Step 2 (word swap): [0x0403, 0x0201]
+        // combine_u32(0x0403, 0x0201) = 0x04030201 = 67305985
+        assert_eq!(
+            NumFormat::Uint32.format_value(&[0x0102, 0x0304], &BYTE_AND_WORD_INTS),
+            "67305985"
+        );
+    }
+
+    #[test]
+    fn byte_and_word_swap_uint64() {
+        // regs [0x0102, 0x0304, 0x0506, 0x0708]
+        // Step 1 (byte swap): [0x0201, 0x0403, 0x0605, 0x0807]
+        // Step 2 (word swap): [0x0807, 0x0605, 0x0403, 0x0201]
+        // combine = 0x0807060504030201
+        assert_eq!(
+            NumFormat::Uint64.format_value(&[0x0102, 0x0304, 0x0506, 0x0708], &BYTE_AND_WORD_INTS),
+            "578437695752307201" // 0x0807060504030201
+        );
+    }
+
+    #[test]
+    fn byte_and_word_swap_float32() {
+        // Verify byte+word swap produces a different result than no-swap
+        let regs = [0x3F80, 0x0000];
+        let v_none = NumFormat::Float32.format_value(&regs, &NO_SWAP);
+        let v_both = NumFormat::Float32.format_value(&regs, &BYTE_AND_WORD_FLOATS);
+        assert_eq!(v_none, "1.000000");
+        assert_ne!(
+            v_none, v_both,
+            "byte+word swap should change f32 interpretation"
+        );
+    }
+
+    // =======================================================================
+    // 5. parse_value — byte swap produces correct wire registers
+    // =======================================================================
+
+    #[test]
+    fn parse_uint16_byte_swap() {
+        // User types "513" → u16 = 0x0201 → byte-swapped for wire → 0x0102
+        let regs = NumFormat::Uint16.parse_value("513", &BYTE_SWAP).unwrap();
+        assert_eq!(regs, vec![0x0102]);
+    }
+
+    #[test]
+    fn parse_int16_byte_swap() {
+        // User types "-256" → i16 = -256 → 0xFF00 → byte-swapped → 0x00FF
+        let regs = NumFormat::Int16.parse_value("-256", &BYTE_SWAP).unwrap();
+        assert_eq!(regs, vec![0x00FF]);
+    }
+
+    #[test]
+    fn parse_uint32_byte_swap() {
+        // User types "33620995" (= 0x02010403) → split → [0x0201, 0x0403]
+        // byte-swapped for wire → [0x0102, 0x0304]
+        let regs = NumFormat::Uint32
+            .parse_value("33620995", &BYTE_SWAP)
+            .unwrap();
+        assert_eq!(regs, vec![0x0102, 0x0304]);
+    }
+
+    #[test]
+    fn parse_uint32_word_swap() {
+        // User types "131073" (= 0x00020001) → split → [0x0002, 0x0001]
+        // word-swapped for wire → [0x0001, 0x0002]
+        let regs = NumFormat::Uint32
+            .parse_value("131073", &WORD_SWAP_INTS)
+            .unwrap();
+        assert_eq!(regs, vec![0x0001, 0x0002]);
+    }
+
+    #[test]
+    fn parse_uint32_byte_and_word_swap() {
+        // User types "67305985" (= 0x04030201) → split → [0x0403, 0x0201]
+        // word-swapped → [0x0201, 0x0403]
+        // byte-swapped → [0x0102, 0x0304]
+        let regs = NumFormat::Uint32
+            .parse_value("67305985", &BYTE_AND_WORD_INTS)
+            .unwrap();
+        assert_eq!(regs, vec![0x0102, 0x0304]);
+    }
+
+    #[test]
+    fn parse_uint64_byte_and_word_swap() {
+        // User types "578437695752307201" (= 0x0807060504030201)
+        // split → [0x0807, 0x0605, 0x0403, 0x0201]
+        // word-swapped → [0x0201, 0x0403, 0x0605, 0x0807]
+        // byte-swapped → [0x0102, 0x0304, 0x0506, 0x0708]
+        let regs = NumFormat::Uint64
+            .parse_value("578437695752307201", &BYTE_AND_WORD_INTS)
+            .unwrap();
+        assert_eq!(regs, vec![0x0102, 0x0304, 0x0506, 0x0708]);
+    }
+
+    // =======================================================================
+    // 6. Round-trip tests — format then parse returns original wire registers
+    // =======================================================================
+
+    #[test]
+    fn roundtrip_no_swap() {
+        assert_roundtrip(NumFormat::Uint16, &[0x1234], &NO_SWAP);
+        assert_roundtrip(NumFormat::Int16, &[0x8000], &NO_SWAP);
+        // Bin16 display omits "0b" prefix so parse can't round-trip it;
+        // tested separately via parse_binary_input tests.
+        assert_roundtrip(NumFormat::Float16, &[0x3C00], &NO_SWAP); // 1.0
+        assert_roundtrip(NumFormat::Uint32, &[0x0001, 0x0002], &NO_SWAP);
+        assert_roundtrip(NumFormat::Int32, &[0xFFFF, 0xFFFF], &NO_SWAP);
+        assert_roundtrip(NumFormat::Float32, &[0x3F80, 0x0000], &NO_SWAP);
+        assert_roundtrip(NumFormat::Uint64, &[0, 0, 0, 1], &NO_SWAP);
+        assert_roundtrip(
+            NumFormat::Int64,
+            &[0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF],
+            &NO_SWAP,
+        );
+        assert_roundtrip(NumFormat::Float64, &[0x3FF0, 0, 0, 0], &NO_SWAP);
+    }
+
+    #[test]
+    fn roundtrip_byte_swap_single_reg() {
+        assert_roundtrip(NumFormat::Uint16, &[0x0102], &BYTE_SWAP);
+        assert_roundtrip(NumFormat::Int16, &[0x00FF], &BYTE_SWAP);
+        // Float16 byte-swap: use value-based roundtrip (display precision too limited
+        // for arbitrary registers after byte-swap)
+        assert_value_roundtrip(NumFormat::Float16, "1.0", &BYTE_SWAP);
+    }
+
+    #[test]
+    fn roundtrip_byte_swap_dual_reg() {
+        assert_roundtrip(NumFormat::Uint32, &[0x0102, 0x0304], &BYTE_SWAP);
+        assert_roundtrip(NumFormat::Int32, &[0x0102, 0x0304], &BYTE_SWAP);
+        assert_value_roundtrip(NumFormat::Float32, "42.0", &BYTE_SWAP);
+    }
+
+    #[test]
+    fn roundtrip_byte_swap_quad_reg() {
+        assert_roundtrip(
+            NumFormat::Uint64,
+            &[0x0102, 0x0304, 0x0506, 0x0708],
+            &BYTE_SWAP,
+        );
+        assert_roundtrip(
+            NumFormat::Int64,
+            &[0x0102, 0x0304, 0x0506, 0x0708],
+            &BYTE_SWAP,
+        );
+        assert_value_roundtrip(NumFormat::Float64, "42.0", &BYTE_SWAP);
+    }
+
+    #[test]
+    fn roundtrip_word_swap() {
+        assert_roundtrip(NumFormat::Uint32, &[0x0001, 0x0002], &WORD_SWAP_INTS);
+        assert_roundtrip(NumFormat::Int32, &[0xFFFF, 0x0001], &WORD_SWAP_INTS);
+        assert_value_roundtrip(NumFormat::Float32, "42.0", &WORD_SWAP_FLOATS);
+        assert_roundtrip(NumFormat::Uint64, &[0, 0, 0, 1], &WORD_SWAP_INTS);
+        assert_roundtrip(
+            NumFormat::Int64,
+            &[0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF],
+            &WORD_SWAP_INTS,
+        );
+        assert_value_roundtrip(NumFormat::Float64, "42.0", &WORD_SWAP_FLOATS);
+    }
+
+    #[test]
+    fn roundtrip_byte_and_word_swap() {
+        assert_roundtrip(NumFormat::Uint32, &[0x0102, 0x0304], &BYTE_AND_WORD_INTS);
+        assert_roundtrip(NumFormat::Int32, &[0x0102, 0x0304], &BYTE_AND_WORD_INTS);
+        assert_value_roundtrip(NumFormat::Float32, "42.0", &BYTE_AND_WORD_FLOATS);
+        assert_roundtrip(
+            NumFormat::Uint64,
+            &[0x0102, 0x0304, 0x0506, 0x0708],
+            &BYTE_AND_WORD_INTS,
+        );
+        assert_roundtrip(
+            NumFormat::Int64,
+            &[0x0102, 0x0304, 0x0506, 0x0708],
+            &BYTE_AND_WORD_INTS,
+        );
+        assert_value_roundtrip(NumFormat::Float64, "42.0", &BYTE_AND_WORD_FLOATS);
+    }
+
+    /// Exhaustive round-trip across integer/uint formats and ALL swap configurations.
+    /// Float and Bin16 formats are tested separately because they have precision
+    /// or formatting constraints that prevent universal round-trip.
+    #[test]
+    fn roundtrip_integer_formats_all_swaps() {
+        let swap_configs = [
+            NO_SWAP,
+            BYTE_SWAP,
+            WORD_SWAP_INTS,
+            WORD_SWAP_ALL,
+            BYTE_AND_WORD_INTS,
+            BYTE_AND_WORD_ALL,
+        ];
+
+        let regs_1 = vec![0x1234u16];
+        let regs_2 = vec![0x4142u16, 0x4344];
+        let regs_4 = vec![0x0102u16, 0x0304, 0x0506, 0x0708];
+
+        let integer_formats = [
+            NumFormat::Uint16,
+            NumFormat::Int16,
+            NumFormat::Uint32,
+            NumFormat::Int32,
+            NumFormat::Uint64,
+            NumFormat::Int64,
+        ];
+
+        for &ws in &swap_configs {
+            for &nf in &integer_formats {
+                let regs = match nf.width() {
+                    1 => &regs_1,
+                    2 => &regs_2,
+                    4 => &regs_4,
+                    _ => unreachable!(),
+                };
+                assert_roundtrip(nf, regs, &ws);
+            }
+        }
+    }
+
+    /// Float round-trip with all swap configs using value-based approach.
+    /// Starts from clean decimal values to avoid display precision issues.
+    #[test]
+    fn roundtrip_float_formats_all_swaps() {
+        let swap_configs = [
+            NO_SWAP,
+            BYTE_SWAP,
+            WORD_SWAP_FLOATS,
+            WORD_SWAP_ALL,
+            BYTE_AND_WORD_FLOATS,
+            BYTE_AND_WORD_ALL,
+        ];
+
+        for &ws in &swap_configs {
+            assert_value_roundtrip(NumFormat::Float16, "1.0", &ws);
+            assert_value_roundtrip(NumFormat::Float32, "42.0", &ws);
+            assert_value_roundtrip(NumFormat::Float32, "-1.5", &ws);
+            assert_value_roundtrip(NumFormat::Float64, "42.0", &ws);
+            assert_value_roundtrip(NumFormat::Float64, "-100.25", &ws);
+        }
+    }
+
+    // =======================================================================
+    // 7. Edge cases
+    // =======================================================================
+
+    #[test]
+    fn format_value_too_few_registers() {
+        assert_eq!(NumFormat::Uint32.format_value(&[1], &NO_SWAP), "?");
+        assert_eq!(NumFormat::Uint64.format_value(&[1, 2, 3], &NO_SWAP), "?");
+        assert_eq!(NumFormat::Uint32.format_value(&[1], &BYTE_SWAP), "?");
+    }
+
+    #[test]
+    fn byte_swap_zero_is_zero() {
+        // 0x0000 byte-swapped is still 0x0000
+        assert_eq!(NumFormat::Uint16.format_value(&[0], &BYTE_SWAP), "0");
+        assert_eq!(NumFormat::Int16.format_value(&[0], &BYTE_SWAP), "0");
+        assert_eq!(NumFormat::Uint32.format_value(&[0, 0], &BYTE_SWAP), "0");
+    }
+
+    #[test]
+    fn byte_swap_palindrome_unchanged() {
+        // 0xAAAA byte-swapped = 0xAAAA (palindromic bytes)
+        assert_eq!(
+            NumFormat::Uint16.format_value(&[0xAAAA], &BYTE_SWAP),
+            NumFormat::Uint16.format_value(&[0xAAAA], &NO_SWAP)
+        );
+        // 0xFFFF byte-swapped = 0xFFFF
+        assert_eq!(
+            NumFormat::Uint16.format_value(&[0xFFFF], &BYTE_SWAP),
+            NumFormat::Uint16.format_value(&[0xFFFF], &NO_SWAP)
+        );
+    }
+
+    #[test]
+    fn parse_hex_input_with_byte_swap() {
+        // "0xFF" = 255 as u16 → byte-swapped for wire → 0xFF00
+        let regs = NumFormat::Uint16.parse_value("0xFF", &BYTE_SWAP).unwrap();
+        assert_eq!(regs, vec![0xFF00]);
+    }
+
+    #[test]
+    fn parse_binary_input_with_byte_swap() {
+        // "0b100000001" = 257 = 0x0101 → byte-swapped → 0x0101 (palindromic)
+        let regs = NumFormat::Uint16
+            .parse_value("0b100000001", &BYTE_SWAP)
+            .unwrap();
+        assert_eq!(regs, vec![0x0101]);
+    }
+
+    // =======================================================================
+    // 8. should_swap logic
+    // =======================================================================
+
+    #[test]
+    fn should_swap_single_reg_always_false() {
+        for &ws in &[NO_SWAP, WORD_SWAP_INTS, WORD_SWAP_FLOATS, WORD_SWAP_ALL] {
+            assert!(!NumFormat::Uint16.should_swap(&ws));
+            assert!(!NumFormat::Int16.should_swap(&ws));
+            assert!(!NumFormat::Bin16.should_swap(&ws));
+            assert!(!NumFormat::Float16.should_swap(&ws));
+        }
+    }
+
+    #[test]
+    fn should_swap_int_types() {
+        assert!(NumFormat::Int32.should_swap(&WORD_SWAP_INTS));
+        assert!(NumFormat::Uint32.should_swap(&WORD_SWAP_INTS));
+        assert!(NumFormat::Int64.should_swap(&WORD_SWAP_INTS));
+        assert!(NumFormat::Uint64.should_swap(&WORD_SWAP_INTS));
+        assert!(!NumFormat::Int32.should_swap(&WORD_SWAP_FLOATS));
+        assert!(!NumFormat::Uint32.should_swap(&WORD_SWAP_FLOATS));
+    }
+
+    #[test]
+    fn should_swap_float_types() {
+        assert!(NumFormat::Float32.should_swap(&WORD_SWAP_FLOATS));
+        assert!(NumFormat::Float64.should_swap(&WORD_SWAP_FLOATS));
+        assert!(!NumFormat::Float32.should_swap(&WORD_SWAP_INTS));
+        assert!(!NumFormat::Float64.should_swap(&WORD_SWAP_INTS));
+    }
+
+    // =======================================================================
+    // 9. f16 conversion helpers
+    // =======================================================================
+
+    #[test]
+    fn f16_roundtrip_normal_values() {
+        for &val in &[0.0f32, 1.0, -1.0, 0.5, 65504.0] {
+            let bits = f32_to_f16(val);
+            let back = f16_to_f32(bits);
+            assert!(
+                (back - val).abs() < 1e-3,
+                "f16 roundtrip failed for {}: got {}",
+                val,
+                back
+            );
+        }
+    }
+
+    #[test]
+    fn f16_infinity() {
+        let bits = f32_to_f16(f32::INFINITY);
+        assert_eq!(bits, 0x7C00);
+        let bits_neg = f32_to_f16(f32::NEG_INFINITY);
+        assert_eq!(bits_neg, 0xFC00);
+    }
+
+    #[test]
+    fn f16_nan() {
+        let bits = f32_to_f16(f32::NAN);
+        // Should be some NaN (exp=31, frac≠0)
+        assert_eq!(bits & 0x7C00, 0x7C00);
+        assert_ne!(bits & 0x03FF, 0);
+    }
+
+    // =======================================================================
+    // 10. Concrete Modbus scenario: device with byte-swapped registers
+    // =======================================================================
+
+    #[test]
+    fn modbus_scenario_byte_swapped_device() {
+        // A device stores 32-bit value 305419896 (0x12345678)
+        // In standard big-endian: regs [0x1234, 0x5678]
+        // If the device byte-swaps each register on the wire: [0x3412, 0x7856]
+        //
+        // With byte-swap enabled, we read [0x3412, 0x7856]:
+        // byte-swap each → [0x1234, 0x5678] → combine → 0x12345678 = 305419896
+        assert_eq!(
+            NumFormat::Uint32.format_value(&[0x3412, 0x7856], &BYTE_SWAP),
+            "305419896"
+        );
+
+        // Without byte-swap, the same wire data would be misinterpreted:
+        // combine(0x3412, 0x7856) = 0x34127856
+        let misinterpreted = ((0x3412u32) << 16) | 0x7856u32;
+        assert_eq!(
+            NumFormat::Uint32.format_value(&[0x3412, 0x7856], &NO_SWAP),
+            misinterpreted.to_string()
+        );
+    }
+
+    #[test]
+    fn modbus_scenario_both_swaps() {
+        // A device that both byte-swaps AND word-swaps (DCBA byte order)
+        // Value 0x12345678 = 305419896
+        // Standard big-endian regs: [0x1234, 0x5678]
+        // Word-swapped: [0x5678, 0x1234]
+        // Byte-swapped: [0x7856, 0x3412]
+        // So on wire we see [0x7856, 0x3412]
+        //
+        // Reading with both swaps enabled:
+        // Step 1 byte-swap: [0x5678, 0x1234]
+        // Step 2 word-swap: [0x1234, 0x5678]
+        // combine → 0x12345678 = 305419896
+        assert_eq!(
+            NumFormat::Uint32.format_value(&[0x7856, 0x3412], &BYTE_AND_WORD_INTS),
+            "305419896"
+        );
+    }
+
+    #[test]
+    fn modbus_scenario_write_with_byte_swap() {
+        // User wants to write 305419896 to a byte-swapped device
+        // 305419896 = 0x12345678 → split → [0x1234, 0x5678]
+        // byte-swap for wire → [0x3412, 0x7856]
+        let regs = NumFormat::Uint32
+            .parse_value("305419896", &BYTE_SWAP)
+            .unwrap();
+        assert_eq!(regs, vec![0x3412, 0x7856]);
+    }
+
+    #[test]
+    fn modbus_scenario_write_with_both_swaps() {
+        // User wants to write 305419896 with both byte+word swap
+        // 305419896 = 0x12345678 → split → [0x1234, 0x5678]
+        // word-swap → [0x5678, 0x1234]
+        // byte-swap → [0x7856, 0x3412]
+        let regs = NumFormat::Uint32
+            .parse_value("305419896", &BYTE_AND_WORD_INTS)
+            .unwrap();
+        assert_eq!(regs, vec![0x7856, 0x3412]);
     }
 }

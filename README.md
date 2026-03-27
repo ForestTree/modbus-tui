@@ -14,7 +14,7 @@ A terminal-based Modbus TCP client and server for inspecting, monitoring, and te
 - **Write support** — modify holding registers and coils in client mode; all types in server mode
 - **Change highlighting** — actively changing values stay highlighted; fades out after value stabilizes
 - **Register labels** — assign custom labels to individual registers
-- **Word-swap** — configurable byte order for multi-register integers and floats
+- **Byte/word-swap** — configurable byte and word order for all register types
 - **JSON config** — load and save full configuration including formats and labels
 - **Export** — export current register values to JSON
 - **Cross-platform** — runs on Linux, macOS, and Windows
@@ -64,6 +64,12 @@ modbus-tui -p 500 -n --hr 0:10
 
 # Word-swap floats and integers
 modbus-tui -i -f --hr 0:10:f32
+
+# Byte-swap all registers (reverse bytes within each u16)
+modbus-tui -b --hr 0:10
+
+# Combine byte-swap with word-swap
+modbus-tui -b -i -f --hr 0:10:f32
 ```
 
 ### Server mode
@@ -102,6 +108,7 @@ Example `config.json`:
   "start_reference": 0,
   "swap_ints": false,
   "swap_floats": false,
+  "swap_bytes": false,
   "hide_hex": false,
   "decimal_addresses": false,
   "ranges": [
@@ -134,6 +141,7 @@ Config fields and defaults:
 | `start_reference` | `0` | `0` = zero-based, `1` = one-based addressing |
 | `swap_ints` | `false` | Word-swap 32/64-bit integers |
 | `swap_floats` | `false` | Word-swap 32/64-bit floats |
+| `swap_bytes` | `false` | Byte-swap all registers (reverse bytes within each u16) |
 | `hide_hex` | `false` | Hide raw hex column |
 | `decimal_addresses` | `false` | Show addresses in decimal |
 | `ranges` | `[]` | Register ranges to poll/display |
@@ -179,12 +187,13 @@ Format codes (`FMT`): `u16`, `i16`, `u32`, `i32`, `u64`, `i64`, `f32`, `f64`, `b
 | `-D` | `--decimal-addresses` | Show addresses in decimal instead of hex |
 | `-n` | `--no-hex` | Hide raw hex column |
 
-### Word-swap
+### Byte/word-swap
 
 | Flag | Long | Description |
 |------|------|-------------|
-| `-i` | `--swap-ints` | Word-swap 32/64-bit integers |
-| `-f` | `--swap-floats` | Word-swap 32/64-bit floats |
+| `-b` | `--swap-bytes` | Byte-swap all registers (reverse bytes within each u16: `0xABCD` → `0xCDAB`) |
+| `-i` | `--swap-ints` | Word-swap 32/64-bit integers (reverse register order) |
+| `-f` | `--swap-floats` | Word-swap 32/64-bit floats (reverse register order) |
 
 ### Other
 

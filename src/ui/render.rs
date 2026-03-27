@@ -119,16 +119,23 @@ fn draw_status_bar(frame: &mut Frame, state: &AppState, area: Rect) {
         Style::default().fg(Color::DarkGray),
     ));
 
-    // Word-swap indicator
-    let swap_label = match (state.config.swap_ints, state.config.swap_floats) {
-        (true, true) => Some("word swapped ints/floats"),
-        (true, false) => Some("word swapped ints"),
-        (false, true) => Some("word swapped floats"),
-        (false, false) => None,
-    };
-    if let Some(label) = swap_label {
+    // Swap indicator — compact labels: BS = byte swap, WS = word swap
+    let mut swap_parts = Vec::new();
+    if state.config.swap_bytes {
+        swap_parts.push("BS: all");
+    }
+    match (state.config.swap_ints, state.config.swap_floats) {
+        (true, true) => swap_parts.push("WS: ints+floats"),
+        (true, false) => swap_parts.push("WS: ints"),
+        (false, true) => swap_parts.push("WS: floats"),
+        (false, false) => {}
+    }
+    if !swap_parts.is_empty() {
         spans.push(sep);
-        spans.push(Span::styled(label, Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled(
+            format!("swap [{}]", swap_parts.join(", ")),
+            Style::default().fg(Color::Yellow),
+        ));
     }
 
     let status_line = Line::from(spans);
@@ -485,6 +492,7 @@ fn draw_register_pane(
                 let ws = crate::format::WordSwap {
                     ints: state.config.swap_ints,
                     floats: state.config.swap_floats,
+                    bytes: state.config.swap_bytes,
                 };
                 let value_str = nf.format_value(vals, &ws);
                 build_word_row(
@@ -805,6 +813,7 @@ fn draw_write_dialog(frame: &mut Frame, state: &AppState) {
         let ws = crate::format::WordSwap {
             ints: state.config.swap_ints,
             floats: state.config.swap_floats,
+            bytes: state.config.swap_bytes,
         };
         nf.format_value(&vals, &ws)
     } else {

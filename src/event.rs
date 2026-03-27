@@ -320,6 +320,7 @@ fn handle_write_dialog(state: &mut AppState, key: KeyEvent) {
             let ws = crate::format::WordSwap {
                 ints: state.config.swap_ints,
                 floats: state.config.swap_floats,
+                bytes: state.config.swap_bytes,
             };
             match nf.parse_value(&input, &ws) {
                 Ok(values) => {
@@ -481,6 +482,7 @@ fn export_registers(state: &mut AppState, path: &str) {
     let ws = crate::format::WordSwap {
         ints: state.config.swap_ints,
         floats: state.config.swap_floats,
+        bytes: state.config.swap_bytes,
     };
 
     let mut sections = Vec::new();
