@@ -57,6 +57,10 @@ pub struct Cli {
     #[arg(short = 'f', long)]
     pub swap_floats: bool,
 
+    /// Byte-swap all registers (reverse bytes within each u16: 0xABCD → 0xCDAB)
+    #[arg(short = 'b', long)]
+    pub swap_bytes: bool,
+
     /// Poll interval in milliseconds (10..60000)
     #[arg(short = 'p', long, default_value_t = 100)]
     pub poll_interval: u64,
@@ -185,6 +189,9 @@ pub struct AppConfig {
     /// Word-swap multi-register floats during conversion.
     #[serde(default)]
     pub swap_floats: bool,
+    /// Byte-swap: reverse bytes within each u16 register.
+    #[serde(default)]
+    pub swap_bytes: bool,
     /// Hide raw Hex column — show only converted values.
     #[serde(default)]
     pub hide_hex: bool,
@@ -310,6 +317,7 @@ impl AppConfig {
                 start_reference: sr,
                 swap_ints: cli.swap_ints,
                 swap_floats: cli.swap_floats,
+                swap_bytes: cli.swap_bytes,
                 hide_hex: cli.no_hex,
                 decimal_addresses: cli.decimal_addresses,
                 initial_values: HashMap::new(),
