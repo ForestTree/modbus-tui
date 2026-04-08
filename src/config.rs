@@ -41,11 +41,11 @@ pub struct Cli {
     #[arg(long, alias = "di", value_name = "START:COUNT", action = clap::ArgAction::Append)]
     pub discrete_inputs: Vec<String>,
 
-    /// Holding register range: START:COUNT[:FMT] where FMT = u16|i16|u32|i32|u64|i64|f32|f64|b16. START and COUNT accept decimal or hex (0x) [alias: --hr] (repeatable)
+    /// Holding register range: START:COUNT[:FMT] where FMT = u16|i16|u32|i32|u64|i64|f32|f64|b16|ascii. START and COUNT accept decimal or hex (0x) [alias: --hr] (repeatable)
     #[arg(long, alias = "hr", value_name = "START:COUNT[:FMT]", action = clap::ArgAction::Append)]
     pub holding_registers: Vec<String>,
 
-    /// Input register range: START:COUNT[:FMT] where FMT = u16|i16|u32|i32|u64|i64|f32|f64|b16. START and COUNT accept decimal or hex (0x) [alias: --ir] (repeatable)
+    /// Input register range: START:COUNT[:FMT] where FMT = u16|i16|u32|i32|u64|i64|f32|f64|b16|ascii. START and COUNT accept decimal or hex (0x) [alias: --ir] (repeatable)
     #[arg(long, alias = "ir", value_name = "START:COUNT[:FMT]", action = clap::ArgAction::Append)]
     pub input_registers: Vec<String>,
 
@@ -60,6 +60,10 @@ pub struct Cli {
     /// Word-swap 32/64-bit floats (big-endian word order → swapped)
     #[arg(short = 'f', long)]
     pub swap_floats: bool,
+
+    /// Word-swap all multi-register types (reverses register order, applies to ints and floats)
+    #[arg(short = 'w', long)]
+    pub swap_words: bool,
 
     /// Byte-swap all registers (reverse bytes within each u16: 0xABCD → 0xCDAB)
     #[arg(short = 'b', long)]
@@ -193,6 +197,9 @@ pub struct AppConfig {
     /// Word-swap multi-register floats during conversion.
     #[serde(default)]
     pub swap_floats: bool,
+    /// Word-swap all multi-register types (ints and floats).
+    #[serde(default)]
+    pub swap_words: bool,
     /// Byte-swap: reverse bytes within each u16 register.
     #[serde(default)]
     pub swap_bytes: bool,
@@ -321,6 +328,7 @@ impl AppConfig {
                 start_reference: sr,
                 swap_ints: cli.swap_ints,
                 swap_floats: cli.swap_floats,
+                swap_words: cli.swap_words,
                 swap_bytes: cli.swap_bytes,
                 hide_hex: cli.no_hex,
                 decimal_addresses: cli.decimal_addresses,

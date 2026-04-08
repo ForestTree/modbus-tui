@@ -124,11 +124,15 @@ fn draw_status_bar(frame: &mut Frame, state: &AppState, area: Rect) {
     if state.config.swap_bytes {
         swap_parts.push("BS: all");
     }
-    match (state.config.swap_ints, state.config.swap_floats) {
-        (true, true) => swap_parts.push("WS: ints+floats"),
-        (true, false) => swap_parts.push("WS: ints"),
-        (false, true) => swap_parts.push("WS: floats"),
-        (false, false) => {}
+    if state.config.swap_words {
+        swap_parts.push("WS: all");
+    } else {
+        match (state.config.swap_ints, state.config.swap_floats) {
+            (true, true) => swap_parts.push("WS: ints+floats"),
+            (true, false) => swap_parts.push("WS: ints"),
+            (false, true) => swap_parts.push("WS: floats"),
+            (false, false) => {}
+        }
     }
     if !swap_parts.is_empty() {
         spans.push(sep);
@@ -484,16 +488,27 @@ fn draw_register_pane(
                 } else {
                     base_rv
                 };
-                let hex_str = vals
+                let ws = crate::format::WordSwap {
+                    ints: state.config.swap_ints,
+                    floats: state.config.swap_floats,
+                    words: state.config.swap_words,
+                    bytes: state.config.swap_bytes,
+                };
+                // Apply swaps to hex display so it matches the converted value
+                let mut hex_vals: Vec<u16> = if ws.bytes {
+                    vals.iter().map(|&v| v.swap_bytes()).collect()
+                } else {
+                    vals[..nf.width()].to_vec()
+                };
+                if nf.should_swap(&ws) {
+                    let half = hex_vals.len() / 2;
+                    hex_vals.rotate_left(half);
+                }
+                let hex_str = hex_vals
                     .iter()
                     .map(|v| format!("{:04X}", v))
                     .collect::<Vec<_>>()
                     .join(" ");
-                let ws = crate::format::WordSwap {
-                    ints: state.config.swap_ints,
-                    floats: state.config.swap_floats,
-                    bytes: state.config.swap_bytes,
-                };
                 let value_str = nf.format_value(vals, &ws);
                 build_word_row(
                     *base_addr + sr,
@@ -813,6 +828,7 @@ fn draw_write_dialog(frame: &mut Frame, state: &AppState) {
         let ws = crate::format::WordSwap {
             ints: state.config.swap_ints,
             floats: state.config.swap_floats,
+            words: state.config.swap_words,
             bytes: state.config.swap_bytes,
         };
         nf.format_value(&vals, &ws)

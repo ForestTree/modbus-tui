@@ -9,7 +9,7 @@ A terminal-based Modbus TCP client and server for inspecting, monitoring, and te
 - **Client mode** — connect to a Modbus TCP device and poll registers in real time
 - **Server mode** — run a Modbus TCP server with configurable registers for testing
 - **Multiple register types** — Coils, Discrete Inputs, Holding Registers, Input Registers
-- **Numeric formats** — view registers as i16, u16, i32, u32, i64, u64, f16, f32, f64, or binary
+- **Numeric formats** — view registers as i16, u16, i32, u32, i64, u64, f16, f32, f64, binary, or ASCII
 - **Multi-pane layout** — display multiple register ranges side by side
 - **Write support** — modify holding registers and coils in client mode; all types in server mode
 - **Change highlighting** — actively changing values stay highlighted; fades out after value stabilizes
@@ -62,14 +62,17 @@ modbus-tui -r 1 -D --hr 1:10
 # Custom poll interval (500ms), hide hex column
 modbus-tui -p 500 -n --hr 0:10
 
-# Word-swap floats and integers
+# Word-swap floats and integers separately
 modbus-tui -i -f --hr 0:10:f32
+
+# Word-swap all multi-register types (shortcut for -i -f)
+modbus-tui -w --hr 0:10:f32
 
 # Byte-swap all registers (reverse bytes within each u16)
 modbus-tui -b --hr 0:10
 
 # Combine byte-swap with word-swap
-modbus-tui -b -i -f --hr 0:10:f32
+modbus-tui -b -w --hr 0:10:f32
 ```
 
 ### Server mode
@@ -108,6 +111,7 @@ Example `config.json`:
   "start_reference": 0,
   "swap_ints": false,
   "swap_floats": false,
+  "swap_words": false,
   "swap_bytes": false,
   "hide_hex": false,
   "decimal_addresses": false,
@@ -141,6 +145,7 @@ Config fields and defaults:
 | `start_reference` | `0` | `0` = zero-based, `1` = one-based addressing |
 | `swap_ints` | `false` | Word-swap 32/64-bit integers |
 | `swap_floats` | `false` | Word-swap 32/64-bit floats |
+| `swap_words` | `false` | Word-swap all multi-register types (equivalent to `swap_ints` + `swap_floats`) |
 | `swap_bytes` | `false` | Byte-swap all registers (reverse bytes within each u16) |
 | `hide_hex` | `false` | Hide raw hex column |
 | `decimal_addresses` | `false` | Show addresses in decimal |
@@ -154,7 +159,7 @@ Range object fields:
 | `reg_type` | yes | `"holdingregisters"`, `"inputregisters"`, `"coils"`, or `"discreteinputs"` |
 | `start` | yes | Start address (protocol, 0-based) |
 | `count` | yes | Number of registers |
-| `initial_format` | no | Numeric format: `"Int16"`, `"Uint16"`, `"Int32"`, `"Uint32"`, `"Int64"`, `"Uint64"`, `"Float16"`, `"Float32"`, `"Float64"`, `"Bin16"` |
+| `initial_format` | no | Numeric format: `"Int16"`, `"Uint16"`, `"Int32"`, `"Uint32"`, `"Int64"`, `"Uint64"`, `"Float16"`, `"Float32"`, `"Float64"`, `"Bin16"`, `"Ascii"` |
 | `labels` | no | Map of protocol address to label string |
 
 ## CLI arguments
@@ -177,7 +182,7 @@ Range object fields:
 | | `--coils` / `--co` | `START:COUNT` | Coil range |
 | | `--discrete-inputs` / `--di` | `START:COUNT` | Discrete input range |
 
-Format codes (`FMT`): `u16`, `i16`, `u32`, `i32`, `u64`, `i64`, `f32`, `f64`, `b16`
+Format codes (`FMT`): `u16`, `i16`, `u32`, `i32`, `u64`, `i64`, `f32`, `f64`, `b16`, `ascii`
 
 ### Display options
 
@@ -194,6 +199,7 @@ Format codes (`FMT`): `u16`, `i16`, `u32`, `i32`, `u64`, `i64`, `f32`, `f64`, `b
 | `-b` | `--swap-bytes` | Byte-swap all registers (reverse bytes within each u16: `0xABCD` → `0xCDAB`) |
 | `-i` | `--swap-ints` | Word-swap 32/64-bit integers (reverse register order) |
 | `-f` | `--swap-floats` | Word-swap 32/64-bit floats (reverse register order) |
+| `-w` | `--swap-words` | Word-swap all multi-register types (equivalent to `-i` + `-f`) |
 
 ### Other
 
@@ -203,6 +209,85 @@ Format codes (`FMT`): `u16`, `i16`, `u32`, `i32`, `u64`, `i64`, `f32`, `f64`, `b
 | `-c` | `--config` | | Path to JSON config file |
 
 When `-c` is used, CLI arguments (`-H`, `-P`, `-u`, `-m`, `-p`) override values from the config file.
+
+## Swap options explained
+
+All swaps are applied **before** value interpretation (read) and in reverse order **after** value parsing (write). The Hex column reflects the same swapped state as the converted value.
+
+### Processing order (read/display)
+
+```
+Raw registers from device → Step 1: byte-swap (-b) → Step 2: word-swap (-i/-f/-w) → Step 3: interpret value
+```
+
+### `-b` / `--swap-bytes`
+
+Reverses the two bytes **within each u16 register**. Applies to **all** format types.
+
+```
+Register:  0xABCD
+After -b:  0xCDAB
+```
+
+**Use case**: Devices that store data in little-endian byte order within registers.
+
+### `-i` / `--swap-ints`
+
+Reverses **register order** for multi-register **integer** types only.
+Affects: Int32, Uint32, Int64, Uint64. No effect on floats or single-register types.
+
+```
+Uint32:  [0x0001, 0x0002]  → 0x00010002 = 65538
+After:   [0x0002, 0x0001]  → 0x00020001 = 131073
+
+Uint64:  [A, B, C, D]
+After:   [C, D, A, B]  (swap 32-bit halves)
+```
+
+**Use case**: Devices that store multi-word integers in low-word-first order.
+
+### `-f` / `--swap-floats`
+
+Reverses **register order** for multi-register **float** types only.
+Affects: Float32, Float64. No effect on integers or single-register types.
+
+```
+Float32:  [0x3F80, 0x0000]  → 0x3F800000 → 1.0
+After:    [0x0000, 0x3F80]  → 0x00003F80 → 2.278e-41
+```
+
+**Use case**: Devices that swap word order for floats independently of integers.
+
+### `-w` / `--swap-words`
+
+Reverses **register order** for **all** multi-register types. Equivalent to `-i` + `-f` combined. No effect on single-register types (Uint16, Int16, Float16, Bin16, Ascii).
+
+```
+Uint32:   [0x0001, 0x0002]  → reversed → [0x0002, 0x0001]  → 131073
+Float32:  [0x3F80, 0x0000]  → reversed → [0x0000, 0x3F80]  → 2.278e-41
+Uint64:   [A, B, C, D]      → swap 32-bit halves → [C, D, A, B]
+
+Uint16:   0x0102  → unchanged (258)
+Ascii:    0x4869  → unchanged ("Hi")
+```
+
+**Use case**: One flag when the device stores all multi-register values in reversed word order.
+
+### Combining flags
+
+`-b` runs first (byte-swap within each register), then word-swap reverses register order.
+
+| Flags | Uint16 `0x0102` | Uint32 `[0x1234, 0x5678]` | Float32 `[0x3F80, 0x0000]` |
+|---|---|---|---|
+| none | 258 | `[0x1234, 0x5678]` = 305419896 | `[0x3F80, 0x0000]` = 1.0 |
+| `-b` | 513 (`0x0201`) | `[0x3412, 0x7856]` = 873625686 | `[0x803F, 0x0000]` = -5.786e-39 |
+| `-i` | 258 (no effect) | `[0x5678, 0x1234]` = 1450709556 | `[0x3F80, 0x0000]` = 1.0 (no effect) |
+| `-f` | 258 (no effect) | `[0x1234, 0x5678]` = 305419896 (no effect) | `[0x0000, 0x3F80]` = 2.278e-41 |
+| `-w` | 258 (no effect) | `[0x5678, 0x1234]` = 1450709556 | `[0x0000, 0x3F80]` = 2.278e-41 |
+| `-b -w` | 513 (`0x0201`) | `[0x7856, 0x3412]` = 2018967570 | `[0x0000, 0x803F]` = 4.601e-41 |
+| `-b -i -f` | 513 (`0x0201`) | `[0x7856, 0x3412]` = 2018967570 | `[0x0000, 0x803F]` = 4.601e-41 |
+
+`-w` is a convenience shortcut -- `-b -w` is equivalent to `-b -i -f`.
 
 ## Keyboard shortcuts
 
