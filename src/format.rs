@@ -140,7 +140,13 @@ impl NumFormat {
             Self::Ascii => {
                 let hi = (r[0] >> 8) as u8;
                 let lo = (r[0] & 0xFF) as u8;
-                let to_char = |b: u8| if b.is_ascii_graphic() || b == b' ' { b as char } else { '.' };
+                let to_char = |b: u8| {
+                    if b.is_ascii_graphic() || b == b' ' {
+                        b as char
+                    } else {
+                        '.'
+                    }
+                };
                 format!("{}{}", to_char(hi), to_char(lo))
             }
 
@@ -1292,7 +1298,10 @@ mod tests {
         // With swap_words: reversed → [0x0000, 0x3F80] → 0x00003F80
         let no_swap = NumFormat::Float32.format_value(&[0x3F80, 0x0000], &NO_SWAP);
         let swapped = NumFormat::Float32.format_value(&[0x3F80, 0x0000], &SWAP_WORDS);
-        assert_ne!(no_swap, swapped, "swap_words should change Float32 interpretation");
+        assert_ne!(
+            no_swap, swapped,
+            "swap_words should change Float32 interpretation"
+        );
         assert_eq!(no_swap, "1.000000");
     }
 
@@ -1313,7 +1322,10 @@ mod tests {
     #[test]
     fn swap_words_does_not_affect_single_register() {
         // Single-register types are unaffected by swap_words
-        assert_eq!(NumFormat::Uint16.format_value(&[0x0102], &SWAP_WORDS), "258");
+        assert_eq!(
+            NumFormat::Uint16.format_value(&[0x0102], &SWAP_WORDS),
+            "258"
+        );
         assert_eq!(NumFormat::Int16.format_value(&[0x00FF], &SWAP_WORDS), "255");
         assert_eq!(NumFormat::Ascii.format_value(&[0x4869], &SWAP_WORDS), "Hi");
         assert_eq!(
@@ -1347,7 +1359,11 @@ mod tests {
     fn swap_words_with_byte_swap_roundtrip() {
         assert_roundtrip(NumFormat::Uint32, &[0x1234, 0x5678], &SWAP_WORDS_AND_BYTES);
         assert_value_roundtrip(NumFormat::Float32, "1.0", &SWAP_WORDS_AND_BYTES);
-        assert_roundtrip(NumFormat::Uint64, &[0x1111, 0x2222, 0x3333, 0x4444], &SWAP_WORDS_AND_BYTES);
+        assert_roundtrip(
+            NumFormat::Uint64,
+            &[0x1111, 0x2222, 0x3333, 0x4444],
+            &SWAP_WORDS_AND_BYTES,
+        );
     }
 
     #[test]
