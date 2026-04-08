@@ -11,7 +11,11 @@ use serde::{Deserialize, Serialize};
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Parser)]
-#[command(name = "modbus-tui", about = "Modbus TCP TUI client/server")]
+#[command(
+    name = "modbus-tui",
+    about = concat!("Modbus TCP TUI client/server v", env!("CARGO_PKG_VERSION")),
+    version,
+)]
 pub struct Cli {
     /// Run as client or server
     #[arg(short, long, default_value = "client")]
@@ -29,19 +33,19 @@ pub struct Cli {
     #[arg(short = 'u', long, default_value_t = 1)]
     pub unit: u8,
 
-    /// Coil register range: START:COUNT (e.g. 0:10) [alias: --co] (repeatable)
+    /// Coil register range: START:COUNT (e.g. 0:10 or 0x0A:0x10). START and COUNT accept decimal or hex (0x) [alias: --co] (repeatable)
     #[arg(long, alias = "co", value_name = "START:COUNT", action = clap::ArgAction::Append)]
     pub coils: Vec<String>,
 
-    /// Discrete input range: START:COUNT [alias: --di] (repeatable)
+    /// Discrete input range: START:COUNT. START and COUNT accept decimal or hex (0x) [alias: --di] (repeatable)
     #[arg(long, alias = "di", value_name = "START:COUNT", action = clap::ArgAction::Append)]
     pub discrete_inputs: Vec<String>,
 
-    /// Holding register range: START:COUNT[:FMT] where FMT = u16|i16|u32|i32|u64|i64|f32|f64|b16 [alias: --hr] (repeatable)
+    /// Holding register range: START:COUNT[:FMT] where FMT = u16|i16|u32|i32|u64|i64|f32|f64|b16. START and COUNT accept decimal or hex (0x) [alias: --hr] (repeatable)
     #[arg(long, alias = "hr", value_name = "START:COUNT[:FMT]", action = clap::ArgAction::Append)]
     pub holding_registers: Vec<String>,
 
-    /// Input register range: START:COUNT[:FMT] where FMT = u16|i16|u32|i32|u64|i64|f32|f64|b16 [alias: --ir] (repeatable)
+    /// Input register range: START:COUNT[:FMT] where FMT = u16|i16|u32|i32|u64|i64|f32|f64|b16. START and COUNT accept decimal or hex (0x) [alias: --ir] (repeatable)
     #[arg(long, alias = "ir", value_name = "START:COUNT[:FMT]", action = clap::ArgAction::Append)]
     pub input_registers: Vec<String>,
 
@@ -370,17 +374,25 @@ impl AppConfig {
     }
 }
 
+/// Parse a decimal or hex (`0x` prefix) string into a `u16`.
+fn parse_u16(s: &str) -> Option<u16> {
+    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        u16::from_str_radix(hex, 16).ok()
+    } else {
+        s.parse().ok()
+    }
+}
+
 /// Parse "START:COUNT" into (start, count). Start is the user-facing address.
+/// Both START and COUNT accept decimal or hexadecimal (0x prefix) values.
 fn parse_range(s: &str, name: &str) -> Result<(u16, u16)> {
     let parts: Vec<&str> = s.split(':').collect();
     if parts.len() != 2 {
         bail!("{name}: expected format START:COUNT, got \"{s}\"");
     }
-    let start: u16 = parts[0]
-        .parse()
+    let start: u16 = parse_u16(parts[0])
         .with_context(|| format!("{name}: invalid start address \"{}\"", parts[0]))?;
-    let count: u16 = parts[1]
-        .parse()
+    let count: u16 = parse_u16(parts[1])
         .with_context(|| format!("{name}: invalid count \"{}\"", parts[1]))?;
     Ok((start, count))
 }
