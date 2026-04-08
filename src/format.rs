@@ -5,6 +5,8 @@ use std::fmt;
 pub struct WordSwap {
     pub ints: bool,
     pub floats: bool,
+    /// Word-swap all multi-register types (overrides ints/floats for convenience).
+    pub words: bool,
     /// Byte-swap: reverse bytes within each u16 register (0xABCD → 0xCDAB).
     /// Applied to all register types (1, 2, and 4-register values).
     pub bytes: bool,
@@ -24,6 +26,7 @@ pub enum NumFormat {
     Float32,
     Float64,
     Bin16,
+    Ascii,
 }
 
 impl std::str::FromStr for NumFormat {
@@ -39,8 +42,9 @@ impl std::str::FromStr for NumFormat {
             "f32" => Ok(Self::Float32),
             "f64" => Ok(Self::Float64),
             "b16" => Ok(Self::Bin16),
+            "ascii" => Ok(Self::Ascii),
             _ => Err(format!(
-                "unknown format '{}'; expected one of: u16, i16, u32, i32, u64, i64, f32, f64, b16",
+                "unknown format '{}'; expected one of: u16, i16, u32, i32, u64, i64, f32, f64, b16, ascii",
                 s
             )),
         }
@@ -60,12 +64,13 @@ impl NumFormat {
         Self::Float32,
         Self::Float64,
         Self::Bin16,
+        Self::Ascii,
     ];
 
     /// How many consecutive u16 registers this format consumes.
     pub fn width(self) -> usize {
         match self {
-            Self::Int16 | Self::Uint16 | Self::Float16 | Self::Bin16 => 1,
+            Self::Int16 | Self::Uint16 | Self::Float16 | Self::Bin16 | Self::Ascii => 1,
             Self::Int32 | Self::Uint32 | Self::Float32 => 2,
             Self::Int64 | Self::Uint64 | Self::Float64 => 4,
         }
@@ -84,13 +89,18 @@ impl NumFormat {
             Self::Float32 => "Float32",
             Self::Float64 => "Float64",
             Self::Bin16 => "Bin16",
+            Self::Ascii => "Ascii",
         }
     }
 
-    /// Whether this format should have its words swapped given the swap config.
+    /// Whether this format should have its words (register order) swapped.
+    /// Only applies to multi-register types (width >= 2).
     pub fn should_swap(self, ws: &WordSwap) -> bool {
         if self.width() < 2 {
             return false;
+        }
+        if ws.words {
+            return true;
         }
         match self {
             Self::Int32 | Self::Uint32 | Self::Int64 | Self::Uint64 => ws.ints,
@@ -115,15 +125,30 @@ impl NumFormat {
         } else {
             regs[..self.width()].to_vec()
         };
-        // 2. Word-swap (reverse register order) if configured for this format type
+        // 2. Word-swap (swap 32-bit halves) if configured for this format type
+        //    2 regs: [A, B] → [B, A]
+        //    4 regs: [A, B, C, D] → [C, D, A, B]
         if self.should_swap(ws) {
-            r.reverse();
+            let half = r.len() / 2;
+            r.rotate_left(half);
         }
         match self {
             Self::Int16 => format!("{}", r[0] as i16),
             Self::Uint16 => format!("{}", r[0]),
             Self::Bin16 => format!("{:016b}", r[0]),
             Self::Float16 => format!("{:.4}", f16_to_f32(r[0])),
+            Self::Ascii => {
+                let hi = (r[0] >> 8) as u8;
+                let lo = (r[0] & 0xFF) as u8;
+                let to_char = |b: u8| {
+                    if b.is_ascii_graphic() || b == b' ' {
+                        b as char
+                    } else {
+                        '.'
+                    }
+                };
+                format!("{}{}", to_char(hi), to_char(lo))
+            }
 
             Self::Int32 => {
                 let v = combine_u32(r[0], r[1]);
@@ -175,6 +200,13 @@ impl NumFormat {
                 let f: f32 = trimmed.parse().map_err(|e| format!("Float16: {e}"))?;
                 vec![f32_to_f16(f)]
             }
+            Self::Ascii => {
+                let bytes: Vec<u8> = trimmed.bytes().collect();
+                if bytes.len() != 2 {
+                    return Err("Ascii: expected exactly 2 characters".to_string());
+                }
+                vec![((bytes[0] as u16) << 8) | (bytes[1] as u16)]
+            }
             Self::Int32 => {
                 let v = parse_int::<i32>(trimmed).map_err(|e| format!("Int32: {e}"))?;
                 split_u32(v as u32)
@@ -200,9 +232,12 @@ impl NumFormat {
                 split_u64(f.to_bits())
             }
         };
-        // Reverse word order for write if swap is active
+        // Swap 32-bit halves for write if swap is active
+        //    2 regs: [A, B] → [B, A]
+        //    4 regs: [A, B, C, D] → [C, D, A, B]
         if self.should_swap(ws) {
-            regs.reverse();
+            let half = regs.len() / 2;
+            regs.rotate_left(half);
         }
         // Byte-swap each register for write if configured
         if ws.bytes {
@@ -227,6 +262,7 @@ impl fmt::Display for NumFormat {
             Self::Float32 => ("Float32", "IEEE 754 single-precision (2 regs)"),
             Self::Float64 => ("Float64", "IEEE 754 double-precision (4 regs)"),
             Self::Bin16 => ("Bin16", "Binary 16-bit (1 reg)"),
+            Self::Ascii => ("Ascii", "ASCII string (2 chars/reg)"),
         };
         write!(f, "{:<10} {}", name, desc)
     }
@@ -388,41 +424,61 @@ mod tests {
     const NO_SWAP: WordSwap = WordSwap {
         ints: false,
         floats: false,
+        words: false,
         bytes: false,
     };
     const BYTE_SWAP: WordSwap = WordSwap {
         ints: false,
         floats: false,
+        words: false,
         bytes: true,
     };
     const WORD_SWAP_INTS: WordSwap = WordSwap {
         ints: true,
         floats: false,
+        words: false,
         bytes: false,
     };
     const WORD_SWAP_FLOATS: WordSwap = WordSwap {
         ints: false,
         floats: true,
+        words: false,
         bytes: false,
     };
     const WORD_SWAP_ALL: WordSwap = WordSwap {
         ints: true,
         floats: true,
+        words: false,
         bytes: false,
     };
     const BYTE_AND_WORD_INTS: WordSwap = WordSwap {
         ints: true,
         floats: false,
+        words: false,
         bytes: true,
     };
     const BYTE_AND_WORD_FLOATS: WordSwap = WordSwap {
         ints: false,
         floats: true,
+        words: false,
         bytes: true,
     };
     const BYTE_AND_WORD_ALL: WordSwap = WordSwap {
         ints: true,
         floats: true,
+        words: false,
+        bytes: true,
+    };
+    const SWAP_WORDS: WordSwap = WordSwap {
+        ints: false,
+        floats: false,
+        words: true,
+        bytes: false,
+    };
+    const SWAP_WORDS_AND_BYTES: WordSwap = WordSwap {
+        ints: false,
+        floats: false,
+        words: true,
         bytes: true,
     };
 
@@ -750,11 +806,11 @@ mod tests {
     fn byte_and_word_swap_uint64() {
         // regs [0x0102, 0x0304, 0x0506, 0x0708]
         // Step 1 (byte swap): [0x0201, 0x0403, 0x0605, 0x0807]
-        // Step 2 (word swap): [0x0807, 0x0605, 0x0403, 0x0201]
-        // combine = 0x0807060504030201
+        // Step 2 (word swap — swap 32-bit halves): [0x0605, 0x0807, 0x0201, 0x0403]
+        // combine = 0x0605080702010403
         assert_eq!(
             NumFormat::Uint64.format_value(&[0x0102, 0x0304, 0x0506, 0x0708], &BYTE_AND_WORD_INTS),
-            "578437695752307201" // 0x0807060504030201
+            "433761765302535171" // 0x0605080702010403
         );
     }
 
@@ -822,12 +878,12 @@ mod tests {
 
     #[test]
     fn parse_uint64_byte_and_word_swap() {
-        // User types "578437695752307201" (= 0x0807060504030201)
-        // split → [0x0807, 0x0605, 0x0403, 0x0201]
-        // word-swapped → [0x0201, 0x0403, 0x0605, 0x0807]
+        // User types "433761765302535171" (= 0x0605080702010403)
+        // split → [0x0605, 0x0807, 0x0201, 0x0403]
+        // word-swapped (swap 32-bit halves) → [0x0201, 0x0403, 0x0605, 0x0807]
         // byte-swapped → [0x0102, 0x0304, 0x0506, 0x0708]
         let regs = NumFormat::Uint64
-            .parse_value("578437695752307201", &BYTE_AND_WORD_INTS)
+            .parse_value("433761765302535171", &BYTE_AND_WORD_INTS)
             .unwrap();
         assert_eq!(regs, vec![0x0102, 0x0304, 0x0506, 0x0708]);
     }
@@ -1161,5 +1217,173 @@ mod tests {
             .parse_value("305419896", &BYTE_AND_WORD_INTS)
             .unwrap();
         assert_eq!(regs, vec![0x7856, 0x3412]);
+    }
+
+    // =======================================================================
+    // ASCII format tests
+    // =======================================================================
+
+    #[test]
+    fn format_ascii_printable() {
+        // 'H' = 0x48, 'i' = 0x69 → register = 0x4869
+        assert_eq!(NumFormat::Ascii.format_value(&[0x4869], &NO_SWAP), "Hi");
+    }
+
+    #[test]
+    fn format_ascii_non_printable_replaced_with_dot() {
+        // 0x0048 → high byte = 0x00 (non-printable), low byte = 'H'
+        assert_eq!(NumFormat::Ascii.format_value(&[0x0048], &NO_SWAP), ".H");
+    }
+
+    #[test]
+    fn format_ascii_space_preserved() {
+        // ' ' = 0x20, 'A' = 0x41 → 0x2041
+        assert_eq!(NumFormat::Ascii.format_value(&[0x2041], &NO_SWAP), " A");
+    }
+
+    #[test]
+    fn format_ascii_all_non_printable() {
+        assert_eq!(NumFormat::Ascii.format_value(&[0x0001], &NO_SWAP), "..");
+    }
+
+    #[test]
+    fn format_ascii_with_byte_swap() {
+        // 0x4869 byte-swapped → 0x6948 → 'i' = 0x69, 'H' = 0x48
+        assert_eq!(NumFormat::Ascii.format_value(&[0x4869], &BYTE_SWAP), "iH");
+    }
+
+    #[test]
+    fn parse_ascii_two_chars() {
+        let regs = NumFormat::Ascii.parse_value("Hi", &NO_SWAP).unwrap();
+        assert_eq!(regs, vec![0x4869]);
+    }
+
+    #[test]
+    fn parse_ascii_rejects_wrong_length() {
+        assert!(NumFormat::Ascii.parse_value("A", &NO_SWAP).is_err());
+        assert!(NumFormat::Ascii.parse_value("ABC", &NO_SWAP).is_err());
+        assert!(NumFormat::Ascii.parse_value("", &NO_SWAP).is_err());
+    }
+
+    #[test]
+    fn ascii_roundtrip_no_swap() {
+        assert_roundtrip(NumFormat::Ascii, &[0x4869], &NO_SWAP); // "Hi"
+        assert_roundtrip(NumFormat::Ascii, &[0x4142], &NO_SWAP); // "AB"
+        assert_roundtrip(NumFormat::Ascii, &[0x3031], &NO_SWAP); // "01"
+    }
+
+    #[test]
+    fn ascii_roundtrip_byte_swap() {
+        assert_roundtrip(NumFormat::Ascii, &[0x4869], &BYTE_SWAP);
+        assert_roundtrip(NumFormat::Ascii, &[0x4142], &BYTE_SWAP);
+    }
+
+    // =======================================================================
+    // swap_words (general word-swap) tests
+    // =======================================================================
+
+    #[test]
+    fn swap_words_applies_to_uint32() {
+        // 0x00010002 = 65538, regs = [0x0001, 0x0002]
+        // With swap_words, register order reversed: reads [0x0002, 0x0001] → 0x00020001 = 131073
+        assert_eq!(
+            NumFormat::Uint32.format_value(&[0x0001, 0x0002], &SWAP_WORDS),
+            "131073"
+        );
+    }
+
+    #[test]
+    fn swap_words_applies_to_float32() {
+        // 1.0f32 = 0x3F800000, regs = [0x3F80, 0x0000]
+        // With swap_words: reversed → [0x0000, 0x3F80] → 0x00003F80
+        let no_swap = NumFormat::Float32.format_value(&[0x3F80, 0x0000], &NO_SWAP);
+        let swapped = NumFormat::Float32.format_value(&[0x3F80, 0x0000], &SWAP_WORDS);
+        assert_ne!(
+            no_swap, swapped,
+            "swap_words should change Float32 interpretation"
+        );
+        assert_eq!(no_swap, "1.000000");
+    }
+
+    #[test]
+    fn swap_words_applies_to_int64() {
+        // -1 as i64 = all-ones — swap has no effect on all-ones
+        assert_eq!(
+            NumFormat::Int64.format_value(&[0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF], &SWAP_WORDS),
+            "-1"
+        );
+        // 1 as u64 = [0, 0, 0, 1] → swap 32-bit halves → [0, 1, 0, 0] = 1 << 32
+        assert_eq!(
+            NumFormat::Uint64.format_value(&[0, 0, 0, 1], &SWAP_WORDS),
+            "4294967296"
+        );
+    }
+
+    #[test]
+    fn swap_words_does_not_affect_single_register() {
+        // Single-register types are unaffected by swap_words
+        assert_eq!(
+            NumFormat::Uint16.format_value(&[0x0102], &SWAP_WORDS),
+            "258"
+        );
+        assert_eq!(NumFormat::Int16.format_value(&[0x00FF], &SWAP_WORDS), "255");
+        assert_eq!(NumFormat::Ascii.format_value(&[0x4869], &SWAP_WORDS), "Hi");
+        assert_eq!(
+            NumFormat::Bin16.format_value(&[0x0102], &SWAP_WORDS),
+            "0000000100000010"
+        );
+    }
+
+    #[test]
+    fn swap_words_roundtrip_uint32() {
+        assert_roundtrip(NumFormat::Uint32, &[0x0001, 0x0002], &SWAP_WORDS);
+    }
+
+    #[test]
+    fn swap_words_roundtrip_float32() {
+        assert_value_roundtrip(NumFormat::Float32, "1.0", &SWAP_WORDS);
+        assert_value_roundtrip(NumFormat::Float32, "-3.14", &SWAP_WORDS);
+    }
+
+    #[test]
+    fn swap_words_roundtrip_uint64() {
+        assert_roundtrip(NumFormat::Uint64, &[0, 0, 0, 1], &SWAP_WORDS);
+    }
+
+    #[test]
+    fn swap_words_roundtrip_float64() {
+        assert_value_roundtrip(NumFormat::Float64, "1.0", &SWAP_WORDS);
+    }
+
+    #[test]
+    fn swap_words_with_byte_swap_roundtrip() {
+        assert_roundtrip(NumFormat::Uint32, &[0x1234, 0x5678], &SWAP_WORDS_AND_BYTES);
+        assert_value_roundtrip(NumFormat::Float32, "1.0", &SWAP_WORDS_AND_BYTES);
+        assert_roundtrip(
+            NumFormat::Uint64,
+            &[0x1111, 0x2222, 0x3333, 0x4444],
+            &SWAP_WORDS_AND_BYTES,
+        );
+    }
+
+    #[test]
+    fn swap_words_overrides_individual_flags() {
+        // Even with ints=false, floats=false, words=true should swap multi-register types
+        let ws = WordSwap {
+            ints: false,
+            floats: false,
+            words: true,
+            bytes: false,
+        };
+        assert!(NumFormat::Float32.should_swap(&ws));
+        assert!(NumFormat::Uint32.should_swap(&ws));
+        assert!(NumFormat::Int64.should_swap(&ws));
+        assert!(NumFormat::Float64.should_swap(&ws));
+        // Single-register: never swapped
+        assert!(!NumFormat::Uint16.should_swap(&ws));
+        assert!(!NumFormat::Int16.should_swap(&ws));
+        assert!(!NumFormat::Ascii.should_swap(&ws));
+        assert!(!NumFormat::Bin16.should_swap(&ws));
+        assert!(!NumFormat::Float16.should_swap(&ws));
     }
 }
