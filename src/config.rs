@@ -392,8 +392,8 @@ fn parse_range(s: &str, name: &str) -> Result<(u16, u16)> {
     }
     let start: u16 = parse_u16(parts[0])
         .with_context(|| format!("{name}: invalid start address \"{}\"", parts[0]))?;
-    let count: u16 = parse_u16(parts[1])
-        .with_context(|| format!("{name}: invalid count \"{}\"", parts[1]))?;
+    let count: u16 =
+        parse_u16(parts[1]).with_context(|| format!("{name}: invalid count \"{}\"", parts[1]))?;
     Ok((start, count))
 }
 
