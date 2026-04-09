@@ -9,6 +9,7 @@
       "Bash(cargo fmt:*)",
       "Bash(cargo test:*)",
       "Bash(cargo clean:*)",
+      "Bash(cargo doc:*)",
       "Bash(ls:*)",
       "Bash(wc:*)"
     ]

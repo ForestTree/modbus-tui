@@ -230,6 +230,8 @@ pub enum LogLevel {
     Info,
     Warn,
     Error,
+    PacketTx,
+    PacketRx,
 }
 
 impl fmt::Display for LogLevel {
@@ -238,6 +240,8 @@ impl fmt::Display for LogLevel {
             Self::Info => write!(f, "INFO"),
             Self::Warn => write!(f, "WARN"),
             Self::Error => write!(f, "ERR "),
+            Self::PacketTx => write!(f, "TX>>"),
+            Self::PacketRx => write!(f, "RX<<"),
         }
     }
 }

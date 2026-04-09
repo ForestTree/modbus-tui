@@ -721,6 +721,8 @@ fn draw_log(frame: &mut Frame, state: &AppState, area: Rect) {
                     Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                     "ERR ",
                 ),
+                LogLevel::PacketTx => (Style::default().fg(Color::Cyan), "TX>>"),
+                LogLevel::PacketRx => (Style::default().fg(Color::Magenta), "RX<<"),
             };
             ListItem::new(Line::from(vec![
                 Span::styled(
