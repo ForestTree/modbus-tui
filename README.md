@@ -214,6 +214,21 @@ When `-c` is used, CLI arguments (`-H`, `-P`, `-u`, `-m`, `-p`) override values 
 
 All swaps are applied **before** value interpretation (read) and in reverse order **after** value parsing (write). The Hex column reflects the same swapped state as the converted value.
 
+### Endianness and Modbus
+
+The Modbus specification defines **big-endian** (most-significant byte first) byte order within each 16-bit register. For example, the value `0x0102` is transmitted as byte `0x01` followed by `0x02`. This is the default assumption in modbus-tui — with no swap flags, bytes within each register are interpreted in big-endian order and multi-register values are assembled high-word-first.
+
+However, many real-world devices deviate from this convention:
+
+| Deviation | Swap flag | Resulting byte order |
+|---|---|---|
+| Little-endian **bytes** within registers | `-b` | Swaps to big-endian so values are interpreted correctly |
+| Little-endian **word order** for integers | `-i` | Reverses register order for multi-register integer types |
+| Little-endian **word order** for floats | `-f` | Reverses register order for multi-register float types |
+| Little-endian **word order** for all types | `-w` | Reverses register order for all multi-register types (`-i` + `-f`) |
+
+A fully big-endian device (per the Modbus spec) needs no flags. A fully little-endian device — little-endian bytes *and* little-endian word order — needs `-b -w`.
+
 ### Processing order (read/display)
 
 ```
