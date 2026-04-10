@@ -12,7 +12,7 @@ A terminal-based Modbus TCP client and server for inspecting, monitoring, and te
 - **Numeric formats** — view registers as i16, u16, i32, u32, i64, u64, f16, f32, f64, binary, or ASCII
 - **Multi-pane layout** — display multiple register ranges side by side
 - **Write support** — modify holding registers and coils in client mode; all types in server mode
-- **Change highlighting** — actively changing values stay highlighted; fades out after value stabilizes
+- **Change highlighting** — actively changing values stay highlighted; fades out after value stabilizes. Stale values (after a read failure) turn red until the connection recovers
 - **Register labels** — assign custom labels to individual registers
 - **Byte/word-swap** — configurable byte and word order for all register types
 - **JSON config** — load and save full configuration including formats and labels
@@ -348,6 +348,18 @@ Ascii:    0x4869  → unchanged ("Hi")
 | `-b -i -f` | 513 (`0x0201`) | `[0x7856, 0x3412]` = 2018967570 | `[0x0000, 0x803F]` = 4.601e-41 |
 
 `-w` is a convenience shortcut -- `-b -w` is equivalent to `-b -i -f`.
+
+## Value colors
+
+In client mode, register values in the table are color-coded to reflect their freshness and activity:
+
+| Color | Meaning |
+|-------|---------|
+| Default (white/terminal default) | Value is up-to-date and stable |
+| **Yellow** | Value recently changed. Stays highlighted while changes continue; fades back to default ~3 seconds after the value stabilizes |
+| **Red** | Value is stale — the last read operation failed or the client is not currently connected. The previously read value remains visible so you can still see the last known state. Values return to their normal color once polling resumes successfully |
+
+Server mode does not use the red stale indicator (the server is the source of truth for its registers).
 
 ## Keyboard shortcuts
 

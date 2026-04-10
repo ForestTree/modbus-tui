@@ -372,6 +372,10 @@ fn draw_register_pane(
     let regs = &state.registers[pane_idx];
     let is_coils = range.reg_type.is_coil_type();
     let pane_state = &state.ui.panes[pane_idx];
+    // In client mode, previously-polled values become stale as soon as the
+    // connection is no longer healthy. Render them red to signal the problem.
+    let stale = state.config.mode == Mode::Client
+        && !matches!(state.connection, ConnectionStatus::Connected);
 
     let border_style = if is_active {
         Style::default().fg(Color::Yellow)
@@ -422,7 +426,7 @@ fn draw_register_pane(
             .iter()
             .enumerate()
             .map(|(i, (addr, rv))| {
-                build_coil_row(*addr + sr, rv, i == selected && is_active, addr_fmt)
+                build_coil_row(*addr + sr, rv, i == selected && is_active, addr_fmt, stale)
             })
             .collect();
 
@@ -519,6 +523,7 @@ fn draw_register_pane(
                     i == selected && is_active,
                     addr_fmt,
                     hide_hex,
+                    stale,
                 )
             })
             .collect();
@@ -585,7 +590,24 @@ fn change_color(rv: &RegisterValue) -> Color {
     Color::Yellow
 }
 
-fn styles_for_row(rv: &RegisterValue, is_selected: bool) -> (Style, Style, Color) {
+fn styles_for_row(rv: &RegisterValue, is_selected: bool, stale: bool) -> (Style, Style, Color) {
+    if stale {
+        let base = if is_selected {
+            Style::default()
+                .bg(Color::DarkGray)
+                .fg(Color::Red)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Red)
+        };
+        let value = if is_selected {
+            base
+        } else {
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+        };
+        return (base, value, Color::Red);
+    }
+
     let cc = change_color(rv);
     let recently = rv.recently_changed();
     let base = if is_selected {
@@ -622,11 +644,12 @@ fn build_word_row<'a>(
     is_selected: bool,
     addr_format: crate::app::AddrFormat,
     hide_hex: bool,
+    stale: bool,
 ) -> Row<'a> {
-    let (base, value_style, cc) = styles_for_row(rv, is_selected);
+    let (base, value_style, cc) = styles_for_row(rv, is_selected, stale);
 
     let addr_str = format_addr(addr, addr_format);
-    let addr_cell = if rv.recently_changed() && !is_selected {
+    let addr_cell = if (stale || rv.recently_changed()) && !is_selected {
         Cell::from(addr_str).style(Style::default().fg(cc))
     } else {
         Cell::from(addr_str).style(base)
@@ -649,12 +672,13 @@ fn build_coil_row<'a>(
     rv: &RegisterValue,
     is_selected: bool,
     addr_format: crate::app::AddrFormat,
+    stale: bool,
 ) -> Row<'a> {
-    let (base, _value_style, cc) = styles_for_row(rv, is_selected);
+    let (base, _value_style, cc) = styles_for_row(rv, is_selected, stale);
     let recently = rv.recently_changed();
 
     let addr_str = format_addr(addr, addr_format);
-    let addr_cell = if recently && !is_selected {
+    let addr_cell = if (stale || recently) && !is_selected {
         Cell::from(addr_str).style(Style::default().fg(cc))
     } else {
         Cell::from(addr_str).style(base)
@@ -664,7 +688,7 @@ fn build_coil_row<'a>(
 
     let val_style = if is_selected {
         base
-    } else if recently {
+    } else if stale || recently {
         Style::default().fg(cc).add_modifier(Modifier::BOLD)
     } else {
         base
