@@ -2,11 +2,13 @@ use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
+use tokio::net::TcpStream;
 use tokio_modbus::Slave;
 use tokio_modbus::client::{Context, Reader, Writer, tcp};
 
 use crate::app::{ConnectionStatus, RegisterValue, SharedState, WriteRx};
 use crate::config::{PollRange, RegisterType};
+use crate::modbus::transport::LoggingTransport;
 
 const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
 const MAX_BACKOFF: Duration = Duration::from_secs(10);
@@ -19,7 +21,7 @@ async fn run(state: SharedState, mut write_rx: WriteRx) {
     let mut backoff = INITIAL_BACKOFF;
 
     loop {
-        let (running, addr, slave, ranges, sr) = {
+        let (running, addr, slave, ranges, sr, raw_packets) = {
             let s = state.lock().await;
             (
                 s.running,
@@ -27,6 +29,7 @@ async fn run(state: SharedState, mut write_rx: WriteRx) {
                 Slave(s.config.unit),
                 s.config.ranges.clone(),
                 s.config.start_reference,
+                s.config.raw_packets,
             )
         };
         if !running {
@@ -52,7 +55,20 @@ async fn run(state: SharedState, mut write_rx: WriteRx) {
                 .info(format!("connecting to {socket_addr} unit={}", slave.0));
         }
 
-        let mut ctx = match tcp::connect_slave(socket_addr, slave).await {
+        let connect_result = if raw_packets {
+            // Manual connect + wrap with logging transport
+            match TcpStream::connect(socket_addr).await {
+                Ok(stream) => {
+                    let transport = LoggingTransport::new(stream, state.clone());
+                    Ok(tcp::attach_slave(transport, slave))
+                }
+                Err(e) => Err(e),
+            }
+        } else {
+            tcp::connect_slave(socket_addr, slave).await
+        };
+
+        let mut ctx = match connect_result {
             Ok(ctx) => {
                 let mut s = state.lock().await;
                 s.connection = ConnectionStatus::Connected;

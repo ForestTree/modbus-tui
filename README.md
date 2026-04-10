@@ -16,6 +16,7 @@ A terminal-based Modbus TCP client and server for inspecting, monitoring, and te
 - **Register labels** — assign custom labels to individual registers
 - **Byte/word-swap** — configurable byte and word order for all register types
 - **JSON config** — load and save full configuration including formats and labels
+- **Raw packet logging** — optional hex dump of Modbus TCP frames in the log window
 - **Export** — export current register values to JSON
 - **Cross-platform** — runs on Linux, macOS, and Windows
 
@@ -73,6 +74,9 @@ modbus-tui -b --hr 0:10
 
 # Combine byte-swap with word-swap
 modbus-tui -b -w --hr 0:10:f32
+
+# Enable raw packet logging (hex dump of Modbus TCP frames)
+modbus-tui -R --hr 0:10
 ```
 
 ### Server mode
@@ -115,6 +119,7 @@ Example `config.json`:
   "swap_bytes": false,
   "hide_hex": false,
   "decimal_addresses": false,
+  "raw_packets": false,
   "ranges": [
     {
       "reg_type": "holdingregisters",
@@ -149,6 +154,7 @@ Config fields and defaults:
 | `swap_bytes` | `false` | Byte-swap all registers (reverse bytes within each u16) |
 | `hide_hex` | `false` | Hide raw hex column |
 | `decimal_addresses` | `false` | Show addresses in decimal |
+| `raw_packets` | `false` | Log raw Modbus TCP packets (hex dump) in the log window |
 | `ranges` | `[]` | Register ranges to poll/display |
 | `initial_values` | `{}` | Server mode: initial values (`"hr:0": 1234`, `"co:0": 1`) |
 
@@ -191,6 +197,7 @@ Format codes (`FMT`): `u16`, `i16`, `u32`, `i32`, `u64`, `i64`, `f32`, `f64`, `b
 | `-r` | `--start-reference` | Address reference: `0` = zero-based, `1` = one-based (default: `0`) |
 | `-D` | `--decimal-addresses` | Show addresses in decimal instead of hex |
 | `-n` | `--no-hex` | Hide raw hex column |
+| `-R` | `--raw-packets` | Log raw Modbus TCP packets (hex dump) in the log window |
 
 ### Byte/word-swap
 
@@ -209,6 +216,44 @@ Format codes (`FMT`): `u16`, `i16`, `u32`, `i32`, `u64`, `i64`, `f32`, `f64`, `b
 | `-c` | `--config` | | Path to JSON config file |
 
 When `-c` is used, CLI arguments (`-H`, `-P`, `-u`, `-m`, `-p`) override values from the config file.
+
+## Addressing: zero-based vs one-based
+
+The Modbus protocol uses **zero-based** addresses internally — the first holding register is address 0 on the wire. However, many device manuals and SCADA tools use **one-based** numbering (the first holding register is labeled 1, or 40001 in the traditional 5-digit convention).
+
+The `-r` / `--start-reference` flag controls how modbus-tui maps between user-facing addresses and protocol addresses:
+
+| `-r` value | User-facing address | Protocol address (on the wire) | Convention |
+|------------|--------------------|---------------------------------|------------|
+| `0` (default) | 0 | 0 | Zero-based — addresses match the protocol directly |
+| `1` | 1 | 0 | One-based — displayed addresses are offset by 1 from protocol addresses |
+
+### How it works
+
+- **Display**: the address shown in the UI = protocol address + `start_reference`
+- **CLI input**: the START value you provide on the command line is a **user-facing** address, automatically converted to a protocol address by subtracting `start_reference`
+- **Protocol**: the actual Modbus request always uses the zero-based protocol address
+
+### Examples
+
+```sh
+# Zero-based (default): request protocol address 0, display as 0x0000
+modbus-tui --hr 0:10
+
+# One-based: START=1 maps to protocol address 0, displayed as 1 (or 0x0001)
+modbus-tui -r 1 --hr 1:10
+
+# One-based with decimal display
+modbus-tui -r 1 -D --hr 1:10
+```
+
+Both commands above poll the same registers on the wire (protocol addresses 0–9). The difference is only in what the user sees and types.
+
+### Practical guidance
+
+- Use `-r 0` (or omit the flag) when the device documentation uses zero-based addresses
+- Use `-r 1` when the documentation uses one-based addresses (e.g. "register 1" means protocol address 0), so that what you see in modbus-tui matches the datasheet
+- In JSON config, set `"start_reference": 1` for the same effect — note that `start` values in the `ranges` array are always **protocol addresses** (zero-based)
 
 ## Swap options explained
 

@@ -81,6 +81,10 @@ pub struct Cli {
     #[arg(short = 'n', long)]
     pub no_hex: bool,
 
+    /// Log raw Modbus TCP packets (hex dump) in the log window
+    #[arg(short = 'R', long)]
+    pub raw_packets: bool,
+
     /// Path to a JSON config file (overrides other flags)
     #[arg(short = 'c', long, value_name = "FILE")]
     pub config: Option<PathBuf>,
@@ -209,6 +213,9 @@ pub struct AppConfig {
     /// Show MODBUS addresses in decimal (instead of hex) for all panes.
     #[serde(default)]
     pub decimal_addresses: bool,
+    /// Log raw Modbus TCP packets (hex dump) in the log window.
+    #[serde(default)]
+    pub raw_packets: bool,
     /// Server mode: initial register values keyed by "type:address" (e.g. "hr:0": 1234).
     #[serde(default)]
     pub initial_values: HashMap<String, u16>,
@@ -332,6 +339,7 @@ impl AppConfig {
                 swap_bytes: cli.swap_bytes,
                 hide_hex: cli.no_hex,
                 decimal_addresses: cli.decimal_addresses,
+                raw_packets: cli.raw_packets,
                 initial_values: HashMap::new(),
             }
         };
