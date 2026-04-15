@@ -1,0 +1,80 @@
+{
+  "mode": "client",
+  "host": "10.203.11.93",
+  "port": 502,
+  "unit": 1,
+  "ranges": [
+    {
+      "reg_type": "holdingregisters",
+      "start": 40,
+      "count": 4,
+      "initial_format": "Int16",
+      "labels": {
+        "40": "SOH [%]",
+        "41": "SOC [%] x0.1",
+        "42": "SOC_MIN [%] x0.1",
+        "43": "SOC_MAX [%] x0.1"
+      }
+    },
+    {
+      "reg_type": "holdingregisters",
+      "start": 44,
+      "count": 2,
+      "initial_format": "Uint16"
+    },
+    {
+      "reg_type": "holdingregisters",
+      "start": 46,
+      "count": 12,
+      "initial_format": "Int32"
+    },
+    {
+      "reg_type": "holdingregisters",
+      "start": 58,
+      "count": 6,
+      "initial_format": "Float32",
+      "labels": {
+        "58": "Freq [Hz]",
+        "60": "P_Act [W]",
+        "62": "Q_Act [VAr]"
+      }
+    },
+    {
+      "reg_type": "coils",
+      "start": 0,
+      "count": 8,
+      "labels": {
+        "0": "Relay 1",
+        "3": "Relay 4"
+      }
+    },
+    {
+      "reg_type": "discreteinputs",
+      "start": 100,
+      "count": 4,
+      "labels": {
+        "100": "Fault",
+        "101": "Warning"
+      }
+    },
+    {
+      "reg_type": "inputregisters",
+      "start": 200,
+      "count": 8,
+      "initial_format": "Float64",
+      "labels": {
+        "200": "Energy_Total [kWh]"
+      }
+    }
+  ],
+  "poll_interval_ms": 100,
+  "start_reference": 0,
+  "swap_ints": false,
+  "swap_floats": false,
+  "swap_words": false,
+  "swap_bytes": false,
+  "hide_hex": false,
+  "decimal_addresses": true,
+  "raw_packets": false,
+  "initial_values": {}
+}
