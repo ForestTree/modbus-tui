@@ -348,7 +348,7 @@ impl AppConfig {
         Ok(cfg)
     }
 
-    fn load(path: &Path) -> Result<Self> {
+    pub fn load(path: &Path) -> Result<Self> {
         let contents =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         let config: Self = serde_json::from_str(&contents)

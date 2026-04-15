@@ -38,29 +38,11 @@ async fn main() -> Result<()> {
     // Apply startup overrides to pane states (from CLI flags and config)
     {
         let mut s = state.lock().await;
-        // -D flag or config: set all panes to decimal address format
-        if decimal_addresses || s.config.decimal_addresses {
+        s.apply_range_defaults();
+        // -D CLI flag forces decimal even if config disagrees
+        if decimal_addresses {
             for p in &mut s.ui.panes {
                 p.addr_format = app::AddrFormat::Decimal;
-            }
-        }
-        // Apply per-range initial numeric format from START:COUNT:FMT or config
-        let formats: Vec<_> = s.config.ranges.iter().map(|r| r.initial_format).collect();
-        for (i, fmt) in formats.into_iter().enumerate() {
-            if let Some(nf) = fmt
-                && let Some(p) = s.ui.panes.get_mut(i)
-            {
-                p.num_format = nf;
-            }
-        }
-        // Apply per-register labels from config
-        let all_labels: Vec<_> = s.config.ranges.iter().map(|r| r.labels.clone()).collect();
-        for (i, labels) in all_labels.into_iter().enumerate() {
-            for (addr, label) in labels {
-                let rv = s.registers[i]
-                    .entry(addr)
-                    .or_insert_with(|| app::RegisterValue::new(0));
-                rv.label = Some(label);
             }
         }
     }

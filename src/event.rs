@@ -588,37 +588,7 @@ fn export_registers(state: &mut AppState, path: &str) {
 }
 
 fn save_config(state: &mut AppState, path: &str) {
-    use std::collections::BTreeMap;
-
-    let mut config = state.config.clone();
-
-    // Capture current per-pane settings into config
-    for (i, pane) in state.ui.panes.iter().enumerate() {
-        if let Some(range) = config.ranges.get_mut(i) {
-            // Save current numeric format
-            if !range.reg_type.is_coil_type() {
-                range.initial_format = Some(pane.num_format);
-            }
-            // Collect labels from live registers
-            let mut labels = BTreeMap::new();
-            if let Some(regs) = state.registers.get(i) {
-                for (&addr, rv) in regs {
-                    if let Some(label) = &rv.label {
-                        labels.insert(addr, label.clone());
-                    }
-                }
-            }
-            range.labels = labels;
-        }
-    }
-
-    // Capture decimal_addresses: true if all panes use decimal
-    config.decimal_addresses = state
-        .ui
-        .panes
-        .iter()
-        .all(|p| p.addr_format == AddrFormat::Decimal);
-
+    let config = state.build_saved_config();
     match serde_json::to_string_pretty(&config) {
         Ok(json) => match std::fs::write(path, &json) {
             Ok(()) => state.log.info(format!("config saved to {path}")),

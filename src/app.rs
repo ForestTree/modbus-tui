@@ -93,6 +93,82 @@ impl AppState {
         self.config.ranges.len()
     }
 
+    /// Apply per-range config defaults: initial numeric format for each pane,
+    /// `decimal_addresses`, and pre-populate register maps with every address
+    /// in the range so label placeholders don't cause render-time chunk-size
+    /// mismatches.
+    pub fn apply_range_defaults(&mut self) {
+        if self.config.decimal_addresses {
+            for p in &mut self.ui.panes {
+                p.addr_format = AddrFormat::Decimal;
+            }
+        }
+        let formats: Vec<_> = self
+            .config
+            .ranges
+            .iter()
+            .map(|r| r.initial_format)
+            .collect();
+        for (i, fmt) in formats.into_iter().enumerate() {
+            if let Some(nf) = fmt
+                && let Some(p) = self.ui.panes.get_mut(i)
+            {
+                p.num_format = nf;
+            }
+        }
+        let ranges: Vec<_> = self
+            .config
+            .ranges
+            .iter()
+            .map(|r| (r.start, r.count, r.labels.clone()))
+            .collect();
+        for (i, (start, count, labels)) in ranges.into_iter().enumerate() {
+            for offset in 0..count {
+                let addr = start + offset;
+                self.registers[i]
+                    .entry(addr)
+                    .or_insert_with(|| RegisterValue::new(0));
+            }
+            for (addr, label) in labels {
+                if let Some(rv) = self.registers[i].get_mut(&addr) {
+                    rv.label = Some(label);
+                }
+            }
+        }
+    }
+
+    /// Capture the current UI state (pane formats, labels, address display)
+    /// back into an `AppConfig` suitable for JSON serialization. Pure: does
+    /// not touch the filesystem.
+    pub fn build_saved_config(&self) -> crate::config::AppConfig {
+        let mut config = self.config.clone();
+
+        for (i, pane) in self.ui.panes.iter().enumerate() {
+            if let Some(range) = config.ranges.get_mut(i) {
+                if !range.reg_type.is_coil_type() {
+                    range.initial_format = Some(pane.num_format);
+                }
+                let mut labels = BTreeMap::new();
+                if let Some(regs) = self.registers.get(i) {
+                    for (&addr, rv) in regs {
+                        if let Some(label) = &rv.label {
+                            labels.insert(addr, label.clone());
+                        }
+                    }
+                }
+                range.labels = labels;
+            }
+        }
+
+        config.decimal_addresses = self
+            .ui
+            .panes
+            .iter()
+            .all(|p| p.addr_format == AddrFormat::Decimal);
+
+        config
+    }
+
     /// Register map for the currently active tab.
     pub fn registers_for_tab(&self) -> &BTreeMap<u16, RegisterValue> {
         self.registers
@@ -357,5 +433,162 @@ impl UiState {
             log_scroll: 0,
             input_mode: InputMode::Normal,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{AppConfig, RegisterType};
+    use std::path::PathBuf;
+
+    fn test_config_path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/test_config.json")
+    }
+
+    #[test]
+    fn loads_test_config_json() {
+        let cfg = AppConfig::load(&test_config_path()).expect("config parses");
+        assert_eq!(cfg.host, "10.203.11.93");
+        assert_eq!(cfg.port, 502);
+        assert_eq!(cfg.unit, 1);
+        assert_eq!(cfg.ranges.len(), 7);
+        assert!(cfg.decimal_addresses);
+
+        let types: Vec<_> = cfg.ranges.iter().map(|r| r.reg_type).collect();
+        assert!(types.contains(&RegisterType::HoldingRegisters));
+        assert!(types.contains(&RegisterType::Coils));
+        assert!(types.contains(&RegisterType::DiscreteInputs));
+        assert!(types.contains(&RegisterType::InputRegisters));
+    }
+
+    #[test]
+    fn apply_range_defaults_prepopulates_all_addresses() {
+        let cfg = AppConfig::load(&test_config_path()).unwrap();
+        let mut state = AppState::new(cfg);
+        state.apply_range_defaults();
+
+        for (i, range) in state.config.ranges.iter().enumerate() {
+            let regs = &state.registers[i];
+            assert_eq!(
+                regs.len(),
+                range.count as usize,
+                "range[{i}] ({}) should have {} entries, got {}",
+                range.reg_type,
+                range.count,
+                regs.len()
+            );
+            for offset in 0..range.count {
+                let addr = range.start + offset;
+                assert!(
+                    regs.contains_key(&addr),
+                    "range[{i}] missing address {addr}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn apply_range_defaults_assigns_labels() {
+        let cfg = AppConfig::load(&test_config_path()).unwrap();
+        let mut state = AppState::new(cfg);
+        state.apply_range_defaults();
+
+        assert_eq!(
+            state.registers[0].get(&40).unwrap().label.as_deref(),
+            Some("SOH [%]")
+        );
+        assert_eq!(
+            state.registers[3].get(&62).unwrap().label.as_deref(),
+            Some("Q_Act [VAr]")
+        );
+        assert_eq!(
+            state.registers[4].get(&3).unwrap().label.as_deref(),
+            Some("Relay 4")
+        );
+        assert!(state.registers[4].get(&1).unwrap().label.is_none());
+    }
+
+    /// Regression test for the render-side panic:
+    /// `chunks(format_width)` must never produce a short trailing chunk.
+    #[test]
+    fn register_map_length_divisible_by_format_width() {
+        let cfg = AppConfig::load(&test_config_path()).unwrap();
+        let mut state = AppState::new(cfg);
+        state.apply_range_defaults();
+
+        for (i, range) in state.config.ranges.iter().enumerate() {
+            if range.reg_type.is_coil_type() {
+                continue;
+            }
+            let width = state.ui.panes[i].num_format.width();
+            let len = state.registers[i].len();
+            assert_eq!(
+                len % width,
+                0,
+                "range[{i}] ({}) len={len} not divisible by width={width}",
+                range.reg_type
+            );
+        }
+    }
+
+    #[test]
+    fn apply_range_defaults_sets_pane_format_from_config() {
+        let cfg = AppConfig::load(&test_config_path()).unwrap();
+        let mut state = AppState::new(cfg);
+        state.apply_range_defaults();
+
+        assert_eq!(state.ui.panes[0].num_format, NumFormat::Int16);
+        assert_eq!(state.ui.panes[2].num_format, NumFormat::Int32);
+        assert_eq!(state.ui.panes[3].num_format, NumFormat::Float32);
+        assert_eq!(state.ui.panes[6].num_format, NumFormat::Float64);
+    }
+
+    /// `:save` roundtrip: load → apply defaults → save → the emitted JSON
+    /// must be structurally equal to the original file. Structural (not
+    /// textual) comparison via `serde_json::Value` ignores formatting and
+    /// object key order.
+    #[test]
+    fn save_config_roundtrip_matches_original_json() {
+        let path = test_config_path();
+        let original_text = std::fs::read_to_string(&path).expect("read test config");
+        let original: serde_json::Value =
+            serde_json::from_str(&original_text).expect("original parses as JSON");
+
+        let cfg = AppConfig::load(&path).unwrap();
+        let mut state = AppState::new(cfg);
+        state.apply_range_defaults();
+
+        let saved_cfg = state.build_saved_config();
+        let saved_text = serde_json::to_string_pretty(&saved_cfg).expect("serialize");
+        let saved: serde_json::Value =
+            serde_json::from_str(&saved_text).expect("saved parses as JSON");
+
+        assert_eq!(
+            original, saved,
+            "save roundtrip differs from original:\n--- original ---\n{original:#}\n--- saved ---\n{saved:#}"
+        );
+    }
+
+    /// If the user edits a label in-memory, the saved config must reflect
+    /// that change (and only that change) relative to the original.
+    #[test]
+    fn save_config_captures_edited_label() {
+        let path = test_config_path();
+        let cfg = AppConfig::load(&path).unwrap();
+        let mut state = AppState::new(cfg);
+        state.apply_range_defaults();
+
+        state.registers[0].get_mut(&40).unwrap().label = Some("NEW_SOH".into());
+
+        let saved_cfg = state.build_saved_config();
+        let saved = serde_json::to_value(&saved_cfg).unwrap();
+
+        let new_label = &saved["ranges"][0]["labels"]["40"];
+        assert_eq!(new_label.as_str(), Some("NEW_SOH"));
+
+        // Other ranges' labels are untouched.
+        let untouched = &saved["ranges"][3]["labels"]["58"];
+        assert_eq!(untouched.as_str(), Some("Freq [Hz]"));
     }
 }
