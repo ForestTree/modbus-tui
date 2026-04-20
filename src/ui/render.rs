@@ -479,14 +479,15 @@ fn draw_register_pane(
             .enumerate()
             .map(|(i, (base_addr, vals, chunk_addrs))| {
                 let base_rv = regs.get(base_addr).unwrap();
-                // For multi-register values, find the most recently changed
-                // register in the group so the row highlights when ANY
-                // sub-register changes.
+                // For multi-register values, pick the sub-register with the
+                // latest `changed_at` as the row's representative. `None`
+                // orders below `Some`, so this prefers any register that has
+                // ever changed, and its `changed_wall` stays pinned across
+                // the fade boundary instead of flipping back to `base_rv`.
                 let rv = if width > 1 {
                     chunk_addrs
                         .iter()
                         .filter_map(|a| regs.get(a))
-                        .filter(|r| r.recently_changed())
                         .max_by_key(|r| r.changed_at)
                         .unwrap_or(base_rv)
                 } else {
