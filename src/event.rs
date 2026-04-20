@@ -97,20 +97,18 @@ fn handle_normal(state: &mut AppState, key: KeyEvent) {
         }
 
         // Format dialog (only for word register panes, not coils)
-        KeyCode::Char('f') => {
-            if !state.active_tab_is_coils() && state.tab_count() > 0 {
-                let current = state
-                    .ui
-                    .panes
-                    .get(state.ui.active_tab)
-                    .map(|p| p.num_format)
-                    .unwrap_or_default();
-                let sel = NumFormat::ALL
-                    .iter()
-                    .position(|f| *f == current)
-                    .unwrap_or(0);
-                state.ui.input_mode = InputMode::FormatDialog { selected: sel };
-            }
+        KeyCode::Char('f') if !state.active_tab_is_coils() && state.tab_count() > 0 => {
+            let current = state
+                .ui
+                .panes
+                .get(state.ui.active_tab)
+                .map(|p| p.num_format)
+                .unwrap_or_default();
+            let sel = NumFormat::ALL
+                .iter()
+                .position(|f| *f == current)
+                .unwrap_or(0);
+            state.ui.input_mode = InputMode::FormatDialog { selected: sel };
         }
 
         // Label dialog — edit label for the selected register

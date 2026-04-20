@@ -85,18 +85,18 @@ Short lock scopes throughout — no nested locks. Server mode uses a separate `A
 
 ## Dependencies
 
-| Crate | Version | Purpose |
-|-------|---------|---------|
-| `ratatui` | 0.30 | TUI framework |
-| `crossterm` | 0.29.0 (+event-stream) | Terminal handling, keyboard input |
-| `tokio` | 1 (+full) | Async runtime |
-| `tokio-modbus` | 0.17 (+tcp, server, tcp-server) | Modbus TCP protocol |
-| `clap` | 4 (+derive) | CLI argument parsing |
-| `anyhow` | 1 | Error handling |
-| `serde` | 1 (+derive) | Serialization |
-| `serde_json` | 1 | JSON config/export |
-| `futures-util` | 0.3 | Async stream utilities |
-| `chrono` | 0.4 | Wall-clock timestamps |
+| Crate          | Version                         | Purpose                           |
+|----------------|---------------------------------|-----------------------------------|
+| `ratatui`      | 0.30                            | TUI framework                     |
+| `crossterm`    | 0.29.0 (+event-stream)          | Terminal handling, keyboard input |
+| `tokio`        | 1 (+full)                       | Async runtime                     |
+| `tokio-modbus` | 0.17 (+tcp, server, tcp-server) | Modbus TCP protocol               |
+| `clap`         | 4 (+derive)                     | CLI argument parsing              |
+| `anyhow`       | 1                               | Error handling                    |
+| `serde`        | 1 (+derive)                     | Serialization                     |
+| `serde_json`   | 1                               | JSON config/export                |
+| `futures-util` | 0.3                             | Async stream utilities            |
+| `chrono`       | 0.4                             | Wall-clock timestamps             |
 
 No dev-dependencies. No test suite yet.
 
