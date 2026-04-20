@@ -335,11 +335,11 @@ pub(crate) fn f32_to_f16(val: f32) -> u16 {
 
     if exp == 255 {
         // Inf or NaN
-        if frac == 0 {
-            return sign | 0x7c00; // Inf
+        return if frac == 0 {
+            sign | 0x7c00 // Inf
         } else {
-            return sign | 0x7c00 | ((frac >> 13) as u16).max(1); // NaN
-        }
+            sign | 0x7c00 | ((frac >> 13) as u16).max(1) // NaN
+        };
     }
 
     let unbiased = exp - 127;

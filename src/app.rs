@@ -140,7 +140,7 @@ impl AppState {
     /// Capture the current UI state (pane formats, labels, address display)
     /// back into an `AppConfig` suitable for JSON serialization. Pure: does
     /// not touch the filesystem.
-    pub fn build_saved_config(&self) -> crate::config::AppConfig {
+    pub fn build_saved_config(&self) -> AppConfig {
         let mut config = self.config.clone();
 
         for (i, pane) in self.ui.panes.iter().enumerate() {
