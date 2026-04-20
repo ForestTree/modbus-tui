@@ -339,7 +339,7 @@ pub(crate) fn f32_to_f16(val: f32) -> u16 {
             sign | 0x7c00 // Inf
         } else {
             sign | 0x7c00 | ((frac >> 13) as u16).max(1) // NaN
-        }
+        };
     }
 
     let unbiased = exp - 127;
