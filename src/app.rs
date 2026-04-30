@@ -348,7 +348,7 @@ impl LogBuffer {
         self.entries.push_back(LogEntry {
             level,
             message: message.into(),
-            wall_clock: Local::now().format("%H:%M:%S%.3f").to_string(),
+            wall_clock: Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
         });
     }
 
