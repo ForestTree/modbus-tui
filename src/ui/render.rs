@@ -189,18 +189,111 @@ fn draw_content(frame: &mut Frame, state: &AppState, area: Rect) {
     }
 }
 
+/// Desired height in cells for the pane at `pane_idx`:
+/// rows of register data + 1 header row + 2 border rows.
+fn pane_desired_height(state: &AppState, pane_idx: usize) -> u16 {
+    let range = &state.config.ranges[pane_idx];
+    let pane_state = &state.ui.panes[pane_idx];
+    let row_count = if range.reg_type.is_coil_type() {
+        range.count as usize
+    } else {
+        let width = pane_state.num_format.width().max(1);
+        (range.count as usize).div_ceil(width)
+    };
+    (row_count as u16).saturating_add(3)
+}
+
 /// Draw all register panes in a grid layout.
 /// 1-2 ranges: 1 row, N columns.
 /// 3-4 ranges: 2 rows, 1-2 columns each...
+///
+/// Row heights are sized to each row's tallest pane: when all rows fit in the
+/// available area, each gets exactly the height it needs (last row absorbs any
+/// leftover). When they don't all fit, space is distributed proportionally to
+/// desired height so larger panes get more room.
 fn draw_register_grid(frame: &mut Frame, state: &AppState, area: Rect) {
     let n = state.config.ranges.len();
     let cols = if n <= 1 { 1 } else { 2 };
     let rows = n.div_ceil(cols); // ceil division
 
-    // Split vertically into rows
-    let row_constraints: Vec<Constraint> = (0..rows)
-        .map(|_| Constraint::Ratio(1, rows as u32))
+    // Each row's desired height = max of its panes' desired heights.
+    let row_desired: Vec<u16> = (0..rows)
+        .map(|row| {
+            let start_idx = row * cols;
+            let end_idx = (start_idx + cols).min(n);
+            (start_idx..end_idx)
+                .map(|idx| pane_desired_height(state, idx))
+                .max()
+                .unwrap_or(3)
+        })
         .collect();
+
+    let total_desired: u32 = row_desired.iter().map(|&h| h as u32).sum();
+    let available = area.height as u32;
+    // Minimum useful pane height: 2 borders + 1 header + 1 value row.
+    const BASELINE: u32 = 4;
+
+    let row_constraints: Vec<Constraint> = if total_desired <= available {
+        // All rows fit. Use exact lengths; the last row uses Min so any
+        // leftover space is absorbed there rather than left empty.
+        row_desired
+            .iter()
+            .enumerate()
+            .map(|(i, &h)| {
+                if i + 1 == rows {
+                    Constraint::Min(h)
+                } else {
+                    Constraint::Length(h)
+                }
+            })
+            .collect()
+    } else if available >= BASELINE * rows as u32 {
+        // Doesn't fit at desired heights, but there's room to give every row a
+        // baseline (1 value row + header + borders). Reserve that baseline
+        // first, *then* split the leftover proportionally to remaining demand
+        // so taller panes get the extra space — proportionality only kicks in
+        // after every pane is guaranteed to show at least one value.
+        let total_baseline = BASELINE * rows as u32;
+        let extra_avail = available - total_baseline;
+        let extra_desired: Vec<u32> = row_desired
+            .iter()
+            .map(|&h| (h as u32).saturating_sub(BASELINE))
+            .collect();
+        let total_extra: u32 = extra_desired.iter().sum();
+
+        let mut heights: Vec<u32> = if total_extra == 0 || extra_avail == 0 {
+            vec![BASELINE; rows]
+        } else {
+            extra_desired
+                .iter()
+                .map(|&e| BASELINE + (e * extra_avail) / total_extra)
+                .collect()
+        };
+        // Award any rounding leftover to the row with the largest desired
+        // height, since it has the most rows to gain from extra space.
+        let assigned: u32 = heights.iter().sum();
+        if assigned < available {
+            let largest = row_desired
+                .iter()
+                .enumerate()
+                .max_by_key(|&(_, &h)| h)
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            heights[largest] += available - assigned;
+        }
+        heights
+            .iter()
+            .map(|&h| Constraint::Length(h as u16))
+            .collect()
+    } else {
+        // Terminal is too short to give every row even a single value.
+        // Fall back to pure proportional sizing.
+        row_desired
+            .iter()
+            .map(|&h| Constraint::Ratio(h as u32, total_desired))
+            .collect()
+    };
+
     let row_areas = Layout::default()
         .direction(Direction::Vertical)
         .constraints(row_constraints)
