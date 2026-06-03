@@ -332,23 +332,38 @@ pub struct LogEntry {
 #[derive(Debug)]
 pub struct LogBuffer {
     pub entries: VecDeque<LogEntry>,
+    /// Optional file the log is also written to (enabled via `-L`/`--log-file`).
+    file: Option<std::fs::File>,
 }
 
 impl LogBuffer {
     pub fn new() -> Self {
         Self {
             entries: VecDeque::with_capacity(LOG_CAPACITY),
+            file: None,
         }
     }
 
+    /// Attach a file for persistent logging. Every subsequent entry is appended
+    /// to this file in addition to being kept in the in-memory ring buffer.
+    pub fn attach_file(&mut self, file: std::fs::File) {
+        self.file = Some(file);
+    }
+
     pub fn push(&mut self, level: LogLevel, message: impl Into<String>) {
+        let message = message.into();
+        let wall_clock = Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
+        if let Some(file) = self.file.as_mut() {
+            use std::io::Write;
+            let _ = writeln!(file, "{wall_clock} [{level}] {message}");
+        }
         if self.entries.len() == LOG_CAPACITY {
             self.entries.pop_front();
         }
         self.entries.push_back(LogEntry {
             level,
-            message: message.into(),
-            wall_clock: Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+            message,
+            wall_clock,
         });
     }
 

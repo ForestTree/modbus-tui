@@ -85,6 +85,10 @@ pub struct Cli {
     #[arg(short = 'R', long)]
     pub raw_packets: bool,
 
+    /// Write the event log to a file. Optional DIR sets the output directory (default: current directory); the file name is auto-derived from the current date/time (e.g. modbus-tui_20260603_142530.log)
+    #[arg(short = 'L', long, value_name = "DIR", num_args = 0..=1, default_missing_value = ".")]
+    pub log_file: Option<String>,
+
     /// Path to a JSON config file (overrides other flags)
     #[arg(short = 'c', long, value_name = "FILE")]
     pub config: Option<PathBuf>,
@@ -216,6 +220,11 @@ pub struct AppConfig {
     /// Log raw Modbus TCP packets (hex dump) in the log window.
     #[serde(default)]
     pub raw_packets: bool,
+    /// Write the event log to a file. `Some(dir)` enables logging into the
+    /// given directory (use "." for the current directory); the file name is
+    /// derived from the current date/time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_file: Option<String>,
     /// Server mode: initial register values keyed by "type:address" (e.g. "hr:0": 1234).
     #[serde(default)]
     pub initial_values: HashMap<String, u16>,
@@ -247,6 +256,9 @@ impl AppConfig {
             if matches.value_source("poll_interval") == Some(clap::parser::ValueSource::CommandLine)
             {
                 c.poll_interval_ms = cli.poll_interval;
+            }
+            if matches.value_source("log_file") == Some(clap::parser::ValueSource::CommandLine) {
+                c.log_file = cli.log_file.clone();
             }
             c
         } else {
@@ -340,6 +352,7 @@ impl AppConfig {
                 hide_hex: cli.no_hex,
                 decimal_addresses: cli.decimal_addresses,
                 raw_packets: cli.raw_packets,
+                log_file: cli.log_file.clone(),
                 initial_values: HashMap::new(),
             }
         };

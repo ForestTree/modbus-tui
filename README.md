@@ -18,6 +18,7 @@ A terminal-based Modbus TCP client and server for inspecting, monitoring, and te
 - **Byte/word-swap** — configurable byte and word order for all register types
 - **JSON config** — load and save full configuration including formats and labels
 - **Raw packet logging** — optional hex dump of Modbus TCP frames in the log window
+- **File logging** — optionally mirror the event log to a timestamped file with a startup summary header
 - **Export** — export current register values to JSON
 - **Cross-platform** — runs on Linux, macOS, and Windows
 
@@ -79,6 +80,12 @@ modbus-tui -b -w --hr 0:10:f32
 
 # Enable raw packet logging (hex dump of Modbus TCP frames)
 modbus-tui -R --hr 0:10
+
+# Write the event log to a file (name auto-derived from date/time)
+modbus-tui -L --hr 0:10
+
+# Write the log file into a specific directory
+modbus-tui -L /var/log --hr 0:10
 ```
 
 ### Server mode
@@ -117,12 +124,13 @@ Format codes (`FMT`): `u16`, `i16`, `u32`, `i32`, `u64`, `i64`, `f32`, `f64`, `b
 
 ### Display options
 
-| Flag | Long                  | Description                                                         |
-|------|-----------------------|---------------------------------------------------------------------|
-| `-r` | `--start-reference`   | Address reference: `0` = zero-based, `1` = one-based (default: `0`) |
-| `-D` | `--decimal-addresses` | Show addresses in decimal instead of hex                            |
-| `-n` | `--no-hex`            | Hide raw hex column                                                 |
-| `-R` | `--raw-packets`       | Log raw Modbus TCP packets (hex dump) in the log window             |
+| Flag | Long                  | Description                                                                  |
+|------|-----------------------|------------------------------------------------------------------------------|
+| `-r` | `--start-reference`   | Address reference: `0` = zero-based, `1` = one-based (default: `0`)          |
+| `-D` | `--decimal-addresses` | Show addresses in decimal instead of hex                                     |
+| `-n` | `--no-hex`            | Hide raw hex column                                                          |
+| `-R` | `--raw-packets`       | Log raw Modbus TCP packets (hex dump) in the log window                      |
+| `-L` | `--log-file [DIR]`    | Mirror the event log to a file (optional output `DIR`, default: current dir) |
 
 ### Byte/word-swap
 
@@ -140,7 +148,7 @@ Format codes (`FMT`): `u16`, `i16`, `u32`, `i32`, `u64`, `i64`, `f32`, `f64`, `b
 | `-p` | `--poll-interval` | `100`   | Poll interval in ms (10–60000) |
 | `-c` | `--config`        |         | Path to JSON config file       |
 
-When `-c` is used, CLI arguments (`-H`, `-P`, `-u`, `-m`, `-p`) override values from the config file.
+When `-c` is used, CLI arguments (`-H`, `-P`, `-u`, `-m`, `-p`, `-L`) override values from the config file.
 
 ## Addressing: zero-based vs one-based
 
@@ -298,6 +306,30 @@ In client mode, register values in the table are color-coded to reflect their fr
 
 Server mode does not use the red stale indicator (the server is the source of truth for its registers).
 
+## Logging to a file
+
+The `-L` / `--log-file` flag mirrors every event-log entry (the same lines shown in the log pane, including raw packet
+dumps when `-R` is enabled) to a file. The file name is derived from the current date/time, so each run produces its own
+file:
+
+```
+modbus-tui_YYYYMMDD_HHMMSS.log
+```
+
+By default the file is written to the current working directory; pass an optional directory to `-L` to write it
+elsewhere (e.g. `-L /var/log`). The same behavior can be enabled from a JSON config via the `log_file` field (set it to
+the output directory, or `"."` for the current directory); a `-L` flag on the command line overrides the config value.
+
+The **first line** of the file summarizes all startup information — version, mode, target/listen address, unit, poll
+interval, start reference, swap flags, raw-packet setting, and the configured register ranges. Each subsequent line is a
+timestamped log entry with its level:
+
+```
+modbus-tui v1.0.5 | started 2026-06-03 09:18:20 | mode=Client | target=127.0.0.1:502 unit=1 poll=100ms | start_reference=0 | swap[bytes=false ints=false floats=false words=false] | raw_packets=false | ranges=[HoldingRegisters@0:4:Float32, Coils@0:8]
+2026-06-03 09:18:20.398 [INFO] modbus-tui started
+2026-06-03 09:18:20.398 [INFO] target 127.0.0.1:502 unit=1
+```
+
 ## Keyboard shortcuts
 
 | Key                       | Action                                    |
@@ -356,6 +388,7 @@ Example `config.json`:
   "hide_hex": false,
   "decimal_addresses": false,
   "raw_packets": false,
+  "log_file": "/var/log",
   "ranges": [
     {
       "reg_type": "holdingregisters",
@@ -402,6 +435,7 @@ Config fields and defaults:
 | `hide_hex`          | `false`       | Hide raw hex column                                                            |
 | `decimal_addresses` | `false`       | Show addresses in decimal                                                      |
 | `raw_packets`       | `false`       | Log raw Modbus TCP packets (hex dump) in the log window                        |
+| `log_file`          | `null`        | Directory for the event-log file (omit/`null` to disable; `"."` = current dir); file name derived from date/time |
 | `ranges`            | `[]`          | Register ranges to poll/display                                                |
 | `initial_values`    | `{}`          | Server mode: initial values (`"hr:0": 1234`, `"co:0": 1`)                      |
 

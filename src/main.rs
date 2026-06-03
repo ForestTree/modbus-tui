@@ -8,10 +8,14 @@ mod ui;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const COPYRIGHT: &str = "(c) 2026 ForestTree";
 
+use std::fs::File;
 use std::io;
+use std::io::Write;
+use std::path::PathBuf;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use chrono::Local;
 use clap::Parser;
 use crossterm::event::{Event, EventStream};
 use crossterm::execute;
@@ -43,6 +47,24 @@ async fn main() -> Result<()> {
         if decimal_addresses {
             for p in &mut s.ui.panes {
                 p.addr_format = app::AddrFormat::Decimal;
+            }
+        }
+    }
+
+    // Enable file logging if requested (-L/--log-file or `log_file` in config).
+    // The file name is derived from the current date/time; the first line
+    // summarizes startup.
+    {
+        let mut s = state.lock().await;
+        if let Some(dir) = s.config.log_file.clone() {
+            match open_log_file(&dir, &s.config) {
+                Ok((path, file)) => {
+                    s.log.attach_file(file);
+                    s.log.info(format!("logging to {}", path.display()));
+                }
+                Err(e) => {
+                    s.log.error(format!("could not open log file: {e}"));
+                }
             }
         }
     }
@@ -135,4 +157,57 @@ async fn run_loop(
         }
     }
     Ok(())
+}
+
+/// Create the log file in `dir` with a name derived from the current date/time
+/// (e.g. `modbus-tui_20260603_142530.log`) and write the startup summary as its
+/// first line. Returns the created path and the open file handle.
+fn open_log_file(dir: &str, config: &AppConfig) -> Result<(PathBuf, File)> {
+    let name = Local::now()
+        .format("modbus-tui_%Y%m%d_%H%M%S.log")
+        .to_string();
+    let path = PathBuf::from(dir).join(name);
+    let mut file =
+        File::create(&path).with_context(|| format!("creating log file {}", path.display()))?;
+    writeln!(file, "{}", startup_summary(config))
+        .with_context(|| format!("writing to log file {}", path.display()))?;
+    Ok((path, file))
+}
+
+/// Build a single-line summary of all startup information for the log header.
+fn startup_summary(config: &AppConfig) -> String {
+    let mut parts = vec![
+        format!("modbus-tui v{VERSION}"),
+        format!("started {}", Local::now().format("%Y-%m-%d %H:%M:%S")),
+        format!("mode={:?}", config.mode),
+    ];
+    match config.mode {
+        Mode::Client => parts.push(format!(
+            "target={}:{} unit={} poll={}ms",
+            config.host, config.port, config.unit, config.poll_interval_ms
+        )),
+        Mode::Server => parts.push(format!(
+            "listen={}:{} unit={}",
+            config.host, config.port, config.unit
+        )),
+    }
+    parts.push(format!("start_reference={}", config.start_reference));
+    parts.push(format!(
+        "swap[bytes={} ints={} floats={} words={}]",
+        config.swap_bytes, config.swap_ints, config.swap_floats, config.swap_words
+    ));
+    parts.push(format!("raw_packets={}", config.raw_packets));
+    let ranges: Vec<String> = config
+        .ranges
+        .iter()
+        .map(|r| {
+            let fmt = r
+                .initial_format
+                .map(|f| format!(":{}", f.column_header()))
+                .unwrap_or_default();
+            format!("{:?}@{}:{}{}", r.reg_type, r.start, r.count, fmt)
+        })
+        .collect();
+    parts.push(format!("ranges=[{}]", ranges.join(", ")));
+    parts.join(" | ")
 }
