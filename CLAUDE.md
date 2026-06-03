@@ -36,7 +36,7 @@ cargo install --path .                         # Install binary locally
 src/
   main.rs           Entry point, terminal setup, 100ms tick event loop
   config.rs         CLI args (clap derive), JSON config parsing, validation
-  app.rs            AppState, SharedState, RegisterValue, LogBuffer, UiState
+  app.rs            AppState, SharedState, RegisterValue, LogBuffer (+ optional file sink), UiState
   format.rs         NumFormat enum, WordSwap, value formatting/parsing
   event.rs          Keyboard handler, command bar (:poll, :export, :save)
   modbus/
@@ -55,7 +55,7 @@ src/
 main.rs: Cli::parse() → AppConfig::from_cli() → new_shared_state() → spawn modbus task → run_loop()
 ```
 
-1. **main.rs** — Parses CLI via clap, creates `AppConfig`, initializes `SharedState`, spawns client or server task, runs the 100ms tick render/input loop with crossterm `EventStream`.
+1. **main.rs** — Parses CLI via clap, creates `AppConfig`, initializes `SharedState`, spawns client or server task, runs the 100ms tick render/input loop with crossterm `EventStream`. When `config.log_file` is set (via `-L`/`--log-file` or the `log_file` config field), `open_log_file()` creates a date/time-named log file, writes a one-line `startup_summary()` header, and attaches it to `LogBuffer` so all entries are mirrored to disk.
 2. **config.rs** — `Cli` struct (clap derive) → `AppConfig::from_cli()`. Supports both CLI args and JSON config files (`-c`). CLI args override config file values when explicitly provided. Parses register ranges as `START:COUNT[:FMT]` with hex (0x prefix) support.
 3. **app.rs** — `AppState` holds all runtime state: config, connection status, registers (`Vec<BTreeMap<u16, RegisterValue>>`), log buffer (rolling 500-entry `VecDeque`), UI state (tabs, panes, input modes), server stats. Wrapped as `SharedState = Arc<Mutex<AppState>>`.
 4. **modbus/client.rs** — Async polling loop: connects with exponential backoff (1-10s), reads all configured ranges per cycle, drains write requests from UI via MPSC channel, tracks value changes with `changed_at` timestamps.
@@ -107,7 +107,7 @@ No dev-dependencies. No test suite yet.
 - Error handling: `anyhow` for main/config, `Result<(), String>` in modbus/format operations
 - User-facing terminology: "unit" (not "slave") for Modbus unit ID
 - Register types in config/code: `HoldingRegisters`, `InputRegisters`, `Coils`, `DiscreteInputs`
-- CLI short flags: `-H` host, `-P` port, `-u` unit, `-p` poll, `-r` reference, `-i`/`-f`/`-w`/`-b` swap, `-D` decimal, `-n` no-hex, `-R` raw packets, `-c` config, `-m` mode
+- CLI short flags: `-H` host, `-P` port, `-u` unit, `-p` poll, `-r` reference, `-i`/`-f`/`-w`/`-b` swap, `-D` decimal, `-n` no-hex, `-R` raw packets, `-L` log file (optional DIR), `-c` config, `-m` mode
 - CLI register aliases: `--hr` (holding-registers), `--ir` (input-registers), `--co` (coils), `--di` (discrete-inputs)
 - Numeric format codes used in CLI and config: `u16`, `i16`, `u32`, `i32`, `u64`, `i64`, `f32`, `f64`, `b16`, `ascii`
 - Keyboard shortcuts: `q`/`Esc` quit, `Tab`/`Shift-Tab` switch panes, `j`/`k` or arrows navigate, `f` format dialog, `w` write dialog, `l` label dialog, `d`/`D` decimal addr (pane/all), `h`/`H` hex addr (pane/all), `:` command bar, `F1` help, `F2` toggle register/log focus
